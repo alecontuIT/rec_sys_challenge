@@ -248,19 +248,20 @@ def bayesian_search(recommender_class, recommender_input_args, hyperparameters_r
                                    save_model = "best",
                                    )
     
-    if recommender_class is ItemKNNCFRec:
-        recommender_class = ItemKNNCFRecommender
-        knn_cf = True
-    elif recommender_class is UserKNNCFRec:
-        recommender_class = UserKNNCFRecommender
-        knn_cf = True
-    else:
-        knn_cf = False
-    
-    if knn_cf: #if knn_cf:
-        recommender_input_args_local = recommender_input_args
-        urm = recommender_input_args_local.CONSTRUCTOR_POSITIONAL_ARGS[0] # the URM 
-        runHyperparameterSearch_Collaborative(recommender_class, 
+    elif recommender_class is ItemKNNCFRec or recommender_class is UserKNNCFRec:
+        if recommender_class is ItemKNNCFRec:
+            recommender_class = ItemKNNCFRecommender
+            knn_cf = True
+        elif recommender_class is UserKNNCFRec:
+            recommender_class = UserKNNCFRecommender
+            knn_cf = True
+        else:
+            knn_cf = False
+        
+        if knn_cf: #if knn_cf:
+            recommender_input_args_local = recommender_input_args
+            urm = recommender_input_args_local.CONSTRUCTOR_POSITIONAL_ARGS[0] # the URM 
+            runHyperparameterSearch_Collaborative(recommender_class, 
                                       urm, 
                                       n_cases = n_cases, 
                                       n_random_starts = n_random_starts,
@@ -458,12 +459,15 @@ def get_folder_best_model(recommender_class, dataset_version="interactions-all-o
         while i < 2:
             if list_dir_no_hid[i] != "hyperparams_search":
                 return os.path.join(folder, list_dir_no_hid[i])
+            i += 1
             
     print("Error: not present best model folder")
 
 
 
 def save_item_scores(recommender_class, URM, user_id_array, dataset_version, fast=True, on_validation=True):
+    '''on_validation must be true if URM is the URM_train (so the URM after splitting)
+    '''
     folder = get_folder_best_model(recommender_class, dataset_version)
     file_name = "item_scores"
     scores_file = os.path.join(folder, file_name + ".npy")
@@ -545,7 +549,7 @@ def get_kwargs_constructor(rec_class, URM, dataset_version="interactions-all-one
     if rec_class is ItemKNNCBFRec:
         return [URM, icm()]
     if rec_class is EASE_R_Rec:
-        sparse_threshold = 0.5
+        sparse_threshold = 0.1
         return [URM, sparse_threshold]
     if rec_class is SLIM_BPRRec:
         memory_threshold = 0.9
