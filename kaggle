@@ -1,0 +1,17 @@
+# Open a kaggle notebook form course challenge
+# Click on Add-ons and add a secret with a name that you want (ex. recsys_git_token)
+# Add as secret the GitHub token to access this repository
+# 
+# Now you can import a notebook from your local folder
+# and before running it, copy these lines of code above the notebook
+#
+# Now you can run your notebook, but remember to set parameter kaggle=True in 
+# functions used to load data, that are defined in utils 
+
+from kaggle_secrets import UserSecretsClient
+user_secrets = UserSecretsClient()
+personal_token = user_secrets.get_secret("recsys_git_token")
+!git clone https://{personal_token}@github.com/alecontuIT/rec_sys_challenge2022.git
+
+import sys
+sys.path.append("rec_sys_challenge2022")

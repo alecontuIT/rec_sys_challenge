@@ -1,0 +1,32 @@
+# MacOs
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+**/.pytest_cache/*
+
+# Ignore cython compiled files
+**/Cython/*.pyd
+**/Cython/*.so
+**/Cython/*.html
+**/Cython/*.c
+**/Cython/build/*
+**/Cython_examples/*.pyd
+**/Cython_examples/*.so
+**/Cython_examples/*.html
+**/Cython_examples/*.c
+**/Cython_examples/build/*
+/result_experiments/**
+/.idea/*
+
+# Ignore generated files
+**/best
+**/item_scores.npy
+**/recommendations.csv
+**/optimization/*.txt
