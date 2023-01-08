@@ -144,9 +144,107 @@ def get_ICM_stacked(URM_csr):
     ICM_csr = sps.csr_matrix(get_URM_stacked(URM_csr).T)
     return ICM_csr
 
+def get_URM_scaled(train_percentage, k, seed, scale_type="minmax"):
+    URM = urm_all_ones_summed()
+    URM_train, URM_validation = split.split_train_in_two_percentage_global_sample(URM, 
+                                                                                  train_percentage = train_percentage,
+                                                                                  seed=seed)
+    URM_train = scale_URM_clusters(URM_train, k, scale_type)
+    return URM, URM_train, URM_validation
 
 
-def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False):
+def scale_URM_clusters(URM, k, scale_type):
+    df = get_df_from_urm(URM)
+    clusters_list = get_clusters_from_df(df, k)
+    URM_scaled = get_urm_scaled_from_clusters(clusters_list, scale_type)
+    return URM_scaled
+    
+    
+    
+def get_df_from_urm(URM):
+    coo = URM.tocoo(copy=False)
+    df = pd.DataFrame({'UserID': coo.row, 'ItemID': coo.col, 'Data': coo.data}
+                 )[['UserID', 'ItemID', 'Data']].sort_values(['UserID', 'ItemID']
+                 ).reset_index(drop=True)
+    return df
+
+
+def get_clusters_from_df(df, k):
+    df["Data"] = df.groupby(["UserID", "ItemID"])["Data"].transform("sum")
+    df.drop_duplicates(inplace=True)
+    
+    df_copy = df.copy()
+    df_copy.drop(columns=["ItemID"], inplace = True)
+    df_copy["Data"] = df_copy.groupby(["UserID"])["Data"].transform("sum")
+    df_copy.drop_duplicates(inplace=True)
+    df_copy.reset_index(inplace=True)
+    # Extract the data values
+    X = df_copy['Data'].values.reshape(-1, 1)
+    # Create a KMeans model with 2 clusters
+    kmeans = KMeans(n_clusters=k)
+    # Fit the model to the data
+    kmeans.fit(X)
+    # Add a new column to the DataFrame with the cluster labels
+    df_copy['cluster'] = kmeans.labels_
+    df_merged = pd.merge(df[["UserID","ItemID","Data"]], df_copy[["UserID","cluster"]], on='UserID')
+    
+    # Create an empty list to store the separate datasets
+    clustered_data = []
+
+    # Iterate through each cluster
+    for i in range(k):
+        # Create a new dataframe for the current cluster
+        cluster_df = df_merged[df_merged['cluster'] == i]
+        # Save the dataframe to the list
+        clustered_data.append(cluster_df)
+        
+    return clustered_data
+
+def logistic(x):
+    return 1 / (1 + math.exp(-x))
+
+def logistic_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_rating=5):
+    normalized_rating = implicit_rating/max_implicit_rating
+    return min_rating + (max_rating - min_rating) * logistic(1 * normalized_rating)
+
+def tanh_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_rating=5):
+    normalized_rating = implicit_rating/max_implicit_rating
+    return min_rating + (max_rating - min_rating) * math.tanh(alpha * implicit_rating)
+
+def ranged_min_max_scale_implicit_rating(implicit_rating):
+    return (4/(max_implicit_rating - min_implicit_rating))*(implicit_rating-min_implicit_rating)+1
+
+def get_urm_scaled_from_clusters(clusters_list, scale_type):
+    clusters = []
+    for cluster in clusters_list:
+        global max_implicit_rating
+        global min_implicit_rating
+        max_implicit_rating = cluster["Data"].max()
+        min_implicit_rating = cluster["Data"].min()
+        if (scale_type == "logistic"):
+            cluster["Data"] = cluster["Data"].apply(logistic_scale_implicit_rating)
+        elif (scale_type == "tanh"):
+            cluster["Data"] = cluster["Data"].apply(tanh_scale_implicit_rating)
+        elif (scale_type == "minmax"):
+            cluster["Data"] = cluster["Data"].apply(ranged_min_max_scale_implicit_rating)
+        else:
+            print("Wrong scale type!")
+        clusters.append(cluster)
+    URM = pd.concat(clusters)
+    URM = URM.sort_values(by=['UserID',"ItemID"])
+    URM.drop(columns=["cluster"], inplace = True)
+    data_ICM_type = pd.read_csv(os.path.join("data","data_ICM_type.csv"), low_memory=False)
+    all_items = pd.concat([URM["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
+    n_users = len(URM["UserID"].unique())
+    n_items = len(all_items)
+    URM = sps.csr_matrix((URM["Data"].values,
+                          (URM["UserID"].values, URM["ItemID"].values)),
+                             shape = (n_users, n_items))
+    return URM
+        
+
+
+def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=20, scale_type="minmax"):
     if setSeed == True:
         seed = 1234
     else:
@@ -171,6 +269,10 @@ def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=Fal
     
     elif (dataset_version == "interactions-summed"):
         return urm_all_ones_summed(), icm_types()
+    
+    elif (dataset_version == "scaled"):
+        URM_csr, URM_train, URM_validation = get_URM_scaled(train_percentage, k, seed, scale_type)
+        return URM_csr, URM_train, URM_validation
     
     else:
         print("Wrong dataset name. Try: \n - interactions-all-ones \n - stacked \n - interactions-summed")
