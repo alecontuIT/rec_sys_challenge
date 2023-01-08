@@ -272,7 +272,7 @@ def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=Fal
     
     elif (dataset_version == "scaled"):
         URM_csr, URM_train, URM_validation = get_URM_scaled(train_percentage, k, seed, scale_type)
-        return URM_csr, URM_train, URM_validation
+        return URM_csr, URM_train, URM_validation, ICM
     
     else:
         print("Wrong dataset name. Try: \n - interactions-all-ones \n - stacked \n - interactions-summed")
