@@ -199,6 +199,13 @@ def get_data_user_wise(dataset_version, train_percentage = 0.70):
         
 
     
+def get_users_for_submission():
+    root_path = "data"
+    users = pd.read_csv(os.path.join(root_path, "data_target_users_test.csv"))
+    return users["user_id"]
+
+
+
 def global_effects(URM_biased, shrink_user=5000, shrink_item=3000):
     # 1) global average
     mu = URM_biased.data.sum(dtype=np.float32) / URM_biased.nnz
@@ -320,13 +327,15 @@ def submission(recommender, dataset_version, override = False):
         
     rec_file_path = os.path.join(recommendations_folder_version, "recommendations.csv")
     if (os.path.exists(rec_file_path) and override) or (not os.path.exists(rec_file_path)):
-        root_path = "data"
-        submission = pd.read_csv(os.path.join(root_path, "data_target_users_test.csv"))
+        users = get_users_for_submission()
         
-        tmp = recommender.recommend(user_id_array=submission["user_id"], cutoff=10)
+        tmp = recommender.recommend(user_id_array=users, cutoff=10)
         well_formatted = []
         for i in tmp:
             well_formatted.append( " ".join([str(x) for x in i]))
+            
+        submission = pd.DataFrame()
+        submission["user_id"] = users
         submission["item_list"] = well_formatted
         submission.to_csv(rec_file_path, index=False)
         
@@ -454,10 +463,10 @@ def get_folder_best_model(recommender_class, dataset_version="interactions-all-o
     list_dir_no_hid = listdir_nohidden(folder)
     if (len(list_dir_no_hid) == 1 and list_dir_no_hid[0] != "hyperparams_search"):
         return os.path.join(folder, list_dir_no_hid[0])
-    if (len(list_dir_no_hid) == 2):
+    if (len(list_dir_no_hid) >= 2):
         i = 0
-        while i < 2:
-            if list_dir_no_hid[i] != "hyperparams_search":
+        while i < len(list_dir_no_hid):
+            if list_dir_no_hid[i][:18] != "hyperparams_search":
                 return os.path.join(folder, list_dir_no_hid[i])
             i += 1
             
@@ -465,11 +474,13 @@ def get_folder_best_model(recommender_class, dataset_version="interactions-all-o
 
 
 
-def save_item_scores(recommender_class, URM, user_id_array, dataset_version, fast=True, on_validation=True):
+def save_item_scores(recommender_class, URM, user_id_array, dataset_version, fast=True, on_validation=True, new_item_scores_file_name_root=None):
     '''on_validation must be true if URM is the URM_train (so the URM after splitting)
     '''
     folder = get_folder_best_model(recommender_class, dataset_version)
-    file_name = "item_scores"
+    if new_item_scores_file_name_root == None:
+        new_item_scores_file_name_root = ""
+    file_name = new_item_scores_file_name_root + "item_scores"
     scores_file = os.path.join(folder, file_name + ".npy")
     if not os.path.exists(scores_file):
         assert URM != None and user_id_array != None
@@ -487,9 +498,11 @@ def save_item_scores(recommender_class, URM, user_id_array, dataset_version, fas
     
     
     
-def load_item_scores(recommender_class,  dataset_version, fast = True):
+def load_item_scores(recommender_class,  dataset_version, fast = True, new_item_scores_file_name_root=None):
     folder = get_folder_best_model(recommender_class, dataset_version)
-    file_name = "item_scores"
+    if new_item_scores_file_name_root == None:
+        new_item_scores_file_name_root = ""
+    file_name = new_item_scores_file_name_root + "item_scores"
     if not fast:
         dataIO = DataIO(folder_path=folder)
         return dataIO.load_data(file_name=file_name)
