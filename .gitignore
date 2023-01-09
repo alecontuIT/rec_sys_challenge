@@ -27,7 +27,7 @@ __pycache__/
 
 # Ignore generated files
 **/best
-**/item_scores.npy
+**/*item_scores.npy
 **/recommendations.csv
 **/optimization/*.txt
 **/optimization/*_best_model.zip

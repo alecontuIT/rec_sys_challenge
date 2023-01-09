@@ -14,14 +14,27 @@ class DiffStructHybridRecommender(BaseRecommender):
     RECOMMENDER_NAME = "DiffStructHybridRecommender"
     RECOMMENDER_VERSION = "version"
 
-    def __init__(self, URM_train, dataset_version="interactions-all-ones", recs_classes_list=[], load_scores_from_saved=True, optimization=True, user_id_array_val=None):
+    def __init__(self, URM_train, dataset_version="interactions-all-ones", recs_classes_list=[], load_scores_from_saved=True, recs_on_urm_splitted=None, user_id_array_val=None, new_item_scores_file_name_root = None, alphas_sum_to_one=False):
         super(DiffStructHybridRecommender, self).__init__(URM_train)
         self.recs_classes_list = recs_classes_list
         self.dataset_version = dataset_version
         self.num_rec = len(recs_classes_list)
-        self.user_id_array_val = user_id_array_val
         self.load_scores_from_saved = load_scores_from_saved
-        self.optimization = optimization
+        self.new_item_scores_file_name_root = new_item_scores_file_name_root
+        self.alphas_sum_to_one = alphas_sum_to_one
+        
+        self.user_id_array_val = user_id_array_val
+        if self.load_scores_from_saved: # if recs_classes_list == [] we are loading from file
+            assert (self.user_id_array_val is not None)
+        else:
+            assert (self.user_id_array_val is None)
+            
+        self.recs_on_urm_splitted = recs_on_urm_splitted
+        if self.recs_on_urm_splitted:
+            assert (self.new_item_scores_file_name_root is None)
+        else:
+            assert (self.new_item_scores_file_name_root is not None)
+            
         self.trained_recs_list = []
         self.recs_classes_names = []
         self.there_is_an_hybrid = False
@@ -34,13 +47,15 @@ class DiffStructHybridRecommender(BaseRecommender):
                 rec = utils.load_best_model(self.URM_train, 
                                             rec_class, 
                                             dataset_version=self.dataset_version, 
-                                            optimization=self.optimization)
+                                            optimization=self.recs_on_urm_splitted)
             else:
                 rec = FastLoadWrapperRecommender(self.URM_train, 
                                                  rec_class, 
                                                  dataset_version=self.dataset_version,
                                                  user_id_array_val=self.user_id_array_val,
-                                                 fast=True)
+                                                 fast=True,
+                                                 recs_on_urm_splitted = self.recs_on_urm_splitted,
+                                                 new_item_scores_file_name_root = self.new_item_scores_file_name_root)
             self.trained_recs_list.append(rec)
             self.recs_classes_names.append(rec.RECOMMENDER_NAME)
         
@@ -70,7 +85,10 @@ class DiffStructHybridRecommender(BaseRecommender):
         for rec_idx in range(self.num_rec):
             items_weights_single_rec = self.trained_recs_list[rec_idx]._compute_item_score(user_id_array, items_to_compute)
             items_weights_single_rec = self.normalizing(items_weights_single_rec)
-            items_weights += (self.alphas[rec_idx] / self.normalization_const) * items_weights_single_rec
+            weight = self.alphas[rec_idx]
+            if self.alphas_sum_to_one:
+                weight /= self.normalization_const
+            items_weights += weight * items_weights_single_rec
 
         return items_weights
     
@@ -99,21 +117,26 @@ class DiffStructHybridRecommender(BaseRecommender):
         self._print("Saving model in file '{}'".format(folder_path + file_name))
 
             
-        if self.load_scores_from_saved and self.there_is_an_hybrid:
+        if self.there_is_an_hybrid:
+            kwargs = {"load_scores_from_saved": self.load_scores_from_saved, 
+                      "recs_on_urm_splitted": self.recs_on_urm_splitted, 
+                      "user_id_array_val": self.user_id_array_val, 
+                      "new_item_scores_file_name_root": self.new_item_scores_file_name_root}
+            
             old_hybrid = utils.load_best_model(self.URM_train,
                                                DiffStructHybridRecommender, 
                                                dataset_version=self.dataset_version, 
-                                               optimization=True) # get hyperparams from 'optimization' folder
+                                               optimization=True,
+                                               **kwargs) # get hyperparams from 'optimization' folder
             idx_hybrid = 0
             
-            
+            '''
             aaa = {"alphas": self.alphas, 
                              "num_rec": self.num_rec,
                              "normalization_const" : self.normalization_const,
                              "normalize": self.normalize,
                              "recs_classes_names": self.recs_classes_names,
                              "load_scores_from_saved": self.load_scores_from_saved,
-                             "optimization": self.optimization,
                              "dataset_version": self.dataset_version}
             bbb = {"alphas": old_hybrid.alphas, 
                              "num_rec": old_hybrid.num_rec,
@@ -121,10 +144,10 @@ class DiffStructHybridRecommender(BaseRecommender):
                              "normalize": old_hybrid.normalize,
                              "recs_classes_names": old_hybrid.recs_classes_names,
                              "load_scores_from_saved": old_hybrid.load_scores_from_saved,
-                             "optimization": old_hybrid.optimization,
                              "dataset_version": old_hybrid.dataset_version}
             print("#######################################\n" + "BIGGER HYBRID BLACK BOX ELEMENTS: " + str(aaa) + "\n#######################################")
             print("#######################################\n" + "SMALL OLD HYBRID: " + str(bbb) + "\n#######################################")
+            '''
 
             for idx in range(len(self.recs_classes_list)):
                 if self.recs_classes_list[idx] == DiffStructHybridRecommender:
@@ -163,22 +186,21 @@ class DiffStructHybridRecommender(BaseRecommender):
                              "normalization_const" : new_normalization_const,
                              "normalize": self.normalize,
                              "recs_classes_names": new_recs_classes_names,
-                             "load_scores_from_saved": self.load_scores_from_saved,
-                             "optimization": self.optimization,
                              "dataset_version": self.dataset_version}
-            
+                    
         else:
             data_dict_to_save = {"alphas": self.alphas, 
                              "num_rec": self.num_rec,
                              "normalization_const" : self.normalization_const,
                              "normalize": self.normalize,
                              "recs_classes_names": self.recs_classes_names,
-                             "load_scores_from_saved": self.load_scores_from_saved,
-                             "optimization": self.optimization,
                              "dataset_version": self.dataset_version}
 
+
         dataIO = DataIO(folder_path=folder_path)
+        '''
         print("#######################################\n" + "FINAL HYBRID: " + str(data_dict_to_save) + "\n#######################################")
+        '''
         dataIO.save_data(file_name=file_name, data_dict_to_save = data_dict_to_save)
 
         self._print("Saving complete")
@@ -195,12 +217,15 @@ class DiffStructHybridRecommender(BaseRecommender):
             if not self.load_scores_from_saved:
                 rec = utils.load_best_model(self.URM_train, 
                                             rec_class, 
-                                            dataset_version=self.dataset_version, 
-                                            optimization=self.optimization)
+                                            dataset_version=self.dataset_version,
+                                            recs_on_urm_splitted = self.recs_on_urm_splitted,
+                                            optimization=self.recs_on_urm_splitted)
             else:
                 rec = FastLoadWrapperRecommender(self.URM_train, 
                                                  rec_class, 
                                                  dataset_version=self.dataset_version,
                                                  user_id_array_val=self.user_id_array_val,
-                                                 fast=True)
+                                                 fast=True,
+                                                 recs_on_urm_splitted = self.recs_on_urm_splitted,
+                                                 new_item_scores_file_name_root = self.new_item_scores_file_name_root)
             self.trained_recs_list.append(rec)

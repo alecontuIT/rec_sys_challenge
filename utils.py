@@ -51,12 +51,13 @@ def urm_all_ones_summed():
 
 
 def urm_seen_or_info(value_seen=1, value_info=0.5): # so 1 if seen, 0.5 if only info page opened
+    assert value_info < value_seen and value_info != value_seen and value_info != 0, "value_seen = {} and value_info = {} are incompatible".format(value_seen, value_info)
     root_path = "data"
-    interactions_impression = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
+    interactions = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
     data_ICM_type = pd.read_csv(os.path.join(root_path,"data_ICM_type.csv"), low_memory=False)
-    interactions_impression.loc[interactions_impression["Data"] == 1, "Data"] = value_info
-    interactions_impression.loc[interactions_impression["Data"] == 0, "Data"] = value_seen
-    interactions = interactions_impression.drop(columns=["Impressions"])
+    interactions.loc[interactions["Data"] == 1, "Data"] = value_info
+    interactions.loc[interactions["Data"] == 0, "Data"] = value_seen
+    interactions = interactions.drop(columns=["Impressions"])
     all_items = pd.concat([interactions["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
     n_users = len(interactions["UserID"].unique())
     n_items = len(all_items) # should be considered also the items present in the ICM but not here?
@@ -76,15 +77,33 @@ def urm_seen_or_info(value_seen=1, value_info=0.5): # so 1 if seen, 0.5 if only 
 def urm_visualization_all_ones_summed():
     # Import dataframe for URM matrix
     root_path = "data"
-    interactions_impression = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
+    interactions = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
     data_ICM_type = pd.read_csv(os.path.join(root_path,"data_ICM_type.csv"), low_memory=False)
-    interactions_impression.drop(interactions_impression[interactions_impression["Data"] == 1].index, inplace = True)
-    interactions_impression["Data"] = 1
-    interactions = interactions_impression.drop(columns=["Impressions"])
+    interactions.drop(interactions[interactions["Data"] == 1].index, inplace = True)
+    interactions["Data"] = 1
+    interactions.drop(columns=["Impressions"], inplace = True)
     all_items = pd.concat([interactions["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
     n_users = len(interactions["UserID"].unique())
     n_items = len(all_items) # should be considered also the items present in the ICM but not here?
     
+    URM_summed = sps.csr_matrix((interactions["Data"].values,
+                          (interactions["UserID"].values, interactions["ItemID"].values)),
+                             shape = (n_users, n_items))
+    return URM_summed
+
+
+
+def urm_info_all_ones_summed():
+    # Import dataframe for URM matrix
+    root_path = "data"
+    interactions = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
+    n_users = len(interactions["UserID"].unique())
+    data_ICM_type = pd.read_csv(os.path.join(root_path,"data_ICM_type.csv"), low_memory=False)
+    interactions.drop(interactions[interactions["Data"] == 0].index, inplace = True)
+    interactions["Data"] = 1
+    interactions.drop(columns=["Impressions"], inplace = True)
+    all_items = pd.concat([interactions["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
+    n_items = len(all_items) # should be considered also the items present in the ICM but not here?
     URM_summed = sps.csr_matrix((interactions["Data"].values,
                           (interactions["UserID"].values, interactions["ItemID"].values)),
                              shape = (n_users, n_items))
@@ -130,8 +149,29 @@ def icm():
     
     
     
-def ucm():
-    return None
+def ucm(URM_train: sps.spmatrix):
+    ucm = pd.DataFrame();
+    interactions = pd.read_csv(os.path.join("data", "interactions_and_impressions.csv"), low_memory=False)
+    ucm["UserID"] = interactions["UserID"].unique()
+    interactions.drop(columns=["Impressions"], inplace=True)
+    interactions_orig = interactions.copy()
+    interactions.loc[interactions["Data"] == 1, "Data"] = -1
+    interactions.loc[interactions["Data"] == 0, "Data"] = 1
+    interactions.drop(columns=["ItemID"], inplace=True)
+    seen_count = interactions[interactions["Data"] == 1].groupby(['UserID']).count()
+    info_count = interactions[interactions["Data"] == -1].groupby(['UserID']).count()
+    ucm["SeenInteractionCount"] = seen_count
+    ucm["InfoInteractionCount"] = info_count
+    ucm.fillna(0)
+    urm_seen = urm_visualization_all_ones_summed()
+    profile_length_seen = np.ediff1d(sps.csr_matrix(urm_seen).indptr)
+    ucm["ProfileSeen"] = profile_length_seen
+
+    urm_info = urm_info_all_ones_summed()
+    profile_length_info = np.ediff1d(sps.csr_matrix(urm_info).indptr)
+    ucm["ProfileInfo"] = profile_length_info
+    ucm = ucm.convert_dtypes()
+    return ucm
 
 
 
@@ -422,6 +462,7 @@ def optimization_terminated(recommender, dataset_version, override = False):
             train_folder = os.path.join(recommendations_folder, "optimization")
             if not os.path.exists(train_folder):
                     os.makedirs(train_folder)
+            print(hyperparam_search_folder, train_folder)
             copy_all_files(hyperparam_search_folder, train_folder, remove_source=False)
         
     else:
@@ -479,22 +520,6 @@ def get_hyperparams_search_output_folder(recommender_class, dataset_version="int
         os.makedirs(output_folder_path)
         
     return output_folder_path + "/"
-
-
-
-def copy_all_files(source_folder, destination_folder, remove_source=False):
-    if os.path.exists(source_folder):
-        for file_name in os.listdir(source_folder):
-        
-            # construct full file path
-            source = os.path.join(source_folder, file_name)
-            destination = os.path.join(destination_folder, file_name)
-        
-            # copy only files
-            if os.path.isfile(source):
-                shutil.copy(source, destination)
-                if remove_source:
-                    os.remove(source)
 
                 
 
@@ -589,13 +614,25 @@ def save_item_scores(recommender_class, URM, user_id_array, dataset_version, fas
     '''on_validation must be true if URM is the URM_train (so the URM after splitting)
     '''
     folder = get_folder_best_model(recommender_class, dataset_version)
-    if new_item_scores_file_name_root == None:
-        new_item_scores_file_name_root = ""
-    file_name = new_item_scores_file_name_root + "item_scores"
+    if new_item_scores_file_name_root is None:
+        file_name = ""
+    else:
+        file_name = new_item_scores_file_name_root
+    file_name += "item_scores"
     scores_file = os.path.join(folder, file_name + ".npy")
-    if not os.path.exists(scores_file):
-        assert URM != None and user_id_array != None
-        recommender = load_best_model(URM, recommender_class, dataset_version=dataset_version, optimization=on_validation)
+    if not os.path.exists(scores_file) or recommender_class is DiffStructHybridRecommender:
+        assert (URM is not None) and (user_id_array is not None)
+        kwargs = {}
+        if recommender_class is DiffStructHybridRecommender:
+            kwargs = {"load_scores_from_saved": True, 
+                      "recs_on_urm_splitted": on_validation, 
+                      "user_id_array_val": user_id_array, 
+                      "new_item_scores_file_name_root": new_item_scores_file_name_root}
+        recommender = load_best_model(URM, 
+                                      recommender_class, 
+                                      dataset_version=dataset_version, 
+                                      optimization=on_validation, 
+                                      **kwargs)
         item_scores = recommender._compute_item_score(user_id_array)
         
         recommender._print("Saving item_score in file '{}'".format(scores_file)) 
@@ -666,6 +703,24 @@ def listdir_nohidden(path):
         if f.startswith('.'):
             list_dir.remove(f)
     return list_dir
+
+
+
+def copy_all_files(source_folder, destination_folder, remove_source=False):
+    if os.path.exists(source_folder):
+        for file_name in os.listdir(source_folder):
+        
+            # construct full file path
+            source = os.path.join(source_folder, file_name)
+            destination = os.path.join(destination_folder, file_name)
+        
+            # copy only files
+            if os.path.isfile(source):
+                if not os.path.exists(destination_folder):
+                    os.makedirs(destination_folder)
+                shutil.copy(source, destination)
+                if remove_source:
+                    os.remove(source)
 
 
 

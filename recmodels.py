@@ -2,6 +2,7 @@ from Recommenders.NonPersonalizedRecommender import TopPop
 from Recommenders.KNN.ItemKNNCBFRecommender import ItemKNNCBFRecommender
 from Recommenders.KNN.ItemKNNCFRecommender import ItemKNNCFRecommender
 from Recommenders.KNN.UserKNNCFRecommender import UserKNNCFRecommender
+from Recommenders.KNN.ItemKNNSimilarityHybridRecommender import ItemKNNSimilarityHybridRecommender
 from Recommenders.MatrixFactorization.IALSRecommender import IALSRecommender
 from Recommenders.SLIM.Cython.SLIM_BPR_Cython import SLIM_BPR_Cython
 from Recommenders.GraphBased.P3alphaRecommender import P3alphaRecommender
@@ -280,3 +281,14 @@ class SVDFeatureRec(SVDFeature):
         self.RECOMMENDER_VERSION = "epochs-" + str(epochs) + "_nfactors-" + str(num_factors) + "_learnrate-" + str(learning_rate) + "_userreg-" + str(user_reg) +  "_itemreg-" + str(item_reg) + "_userbiasreg-" + str(user_bias_reg) + "__itembiasreg-" + str(item_bias_reg)
 
             
+            
+class ItemKNNSimilarityHybridRec(ItemKNNSimilarityHybridRecommender):
+    RECOMMENDER_VERSION = "best_version"
+    def __init__(self, URM_train, verbose = True):
+        self.URM_train = URM_train
+        self.verbose = verbose
+        
+    def fit(self, Similarity_1, Similarity_2, topK=100, alpha = 0.5, similarities_string = ""):
+        super(ItemKNNSimilarityHybridRec, self).__init__(self.URM_train, Similarity_1, Similarity_2, verbose = self.verbose)
+        super(ItemKNNSimilarityHybridRec, self).fit(topK=topK, alpha=alpha)
+        #self.RECOMMENDER_VERSION = similarities_string + "topK-" + str(topK) + "_alpha-" + str(alpha) 
