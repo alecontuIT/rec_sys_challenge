@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import shutil
 import warnings
+import math
 import Data_manager.split_functions.split_train_validation_random_holdout as split
 from HyperparameterTuning.SearchBayesianSkopt import SearchBayesianSkopt
 from HyperparameterTuning.SearchSingleCase import SearchSingleCase
@@ -11,6 +12,7 @@ from Recommenders.DataIO import DataIO
 from recmodels import *
 from skopt.space import Real
 from HyperparameterTuning.run_hyperparameter_search import runHyperparameterSearch_Collaborative
+from sklearn.cluster import KMeans
     
     
     
@@ -244,7 +246,7 @@ def get_urm_scaled_from_clusters(clusters_list, scale_type):
         
 
 
-def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=20, scale_type="minmax"):
+def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=20, scale_type="minmax", value_seen=1,value_info=0.5):
     if setSeed == True:
         seed = 1234
     else:
@@ -269,6 +271,13 @@ def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=Fal
     
     elif (dataset_version == "interactions-summed"):
         return urm_all_ones_summed(), icm_types()
+    
+    elif (dataset_version == "custom"):
+        URM = urm_seen_or_info(value_seen, value_info)
+        URM_train, URM_validation = split.split_train_in_two_percentage_global_sample(URM, 
+                                                                                  train_percentage = train_percentage,
+                                                                                  seed=seed)
+        return URM, URM_train, URM_validation, ICM
     
     elif (dataset_version == "scaled"):
         URM_csr, URM_train, URM_validation = get_URM_scaled(train_percentage, k, seed, scale_type)
