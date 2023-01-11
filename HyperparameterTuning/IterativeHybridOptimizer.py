@@ -8,8 +8,9 @@ from HyperparameterTuning.SearchAbstractClass import SearchInputRecommenderArgs
 from skopt.space import Categorical, Real, Integer
         
 class IterativeHybridOptimizer():
-    def __init__(self, URM_train, URM_val, rec_classes_list, dataset_version, load_scores_from_saved=True):
+    def __init__(self, URM_all, URM_train, URM_val, rec_classes_list, dataset_version, load_scores_from_saved=True):
         self.URM_train = URM_train
+        self.URM_all = URM_all
         self.rec_classes_list = rec_classes_list
         self.dataset_version = dataset_version
         self.URM_val = URM_val
@@ -31,14 +32,30 @@ class IterativeHybridOptimizer():
     
     def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10):
         pass
+    
+    def on_end_search(**kwargs):
+        rec = utils.load_best_model(self.URM_all, 
+                      self.recommender_hybrid, 
+                      self.dataset_version, 
+                      True,
+                      **kwargs)
+        utils.submission(rec, dataset_version, override=True)
+        
+        folder = utils.get_folder_best_model(self.recommender_hybrid, self.dataset_version)
+        for file in folder:
+            if "hyperparams_search" in file or self.recommender_hybrid.RECOMMENDER_VERSION in file:
+                utils.copy_all_files(os.path.join(folder, file), 
+                                     os.path.join(os.path.join(folder, self.final_folder), file), 
+                                     remove_source=True)
             
             
 class DiffStructHybridOptimizer(IterativeHybridOptimizer):
     def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10):
         self.alphas = []
         rec1_class = self.rec_classes_list[0]
+        self.final_folder = rec1_class.RECOMMENDER_NAME
         old_val_res = self.validation_results[0]
-        hyb_rec_class = DiffStructHybridOptimizer
+        self.recommender_hybrid = DiffStructHybridRecommender
 
         hyperparameters_range_dictionary = utils.get_hybrid_weights_range_dict(2, low=0., high=10., prior="uniform")
         hyperparameters_range_dictionary["normalize"] = Categorical(["L1", None, "fro", "inf", "-inf"])
@@ -64,7 +81,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
             
 #            output_folder_path = str(idx + 1) + "_"
             utils.bayesian_search(
-                hyb_rec_class, 
+                self.recommender_hybrid, 
                 recommender_input_args, 
                 hyperparameters_range_dictionary, 
                 evaluator_validation,
@@ -75,7 +92,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 block_size = block_size
             )
             
-            val_res = utils.get_best_res_on_validation(hyb_rec_class, 
+            val_res = utils.get_best_res_on_validation(self.recommender_hybrid, 
                                                  dataset_version=self.dataset_version, 
                                                  optimization=True)#,
                                                  #custom_folder_name = output_folder_path)
@@ -84,26 +101,33 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 old_val_res = val_res
                 
                 optimized_hybrid = utils.load_model_from_hyperparams_search_folder(self.URM_train,
-                                                             hyb_rec_class, 
+                                                             self.recommender_hybrid, 
                                                              dataset_version=self.dataset_version, 
                                                              load_scores_from_saved=self.load_scores_from_saved, 
                                                              recs_on_urm_splitted=True, 
                                                              user_id_array_val=evaluator_validation.users_to_evaluate)
-                path = utils.get_hyperparams_search_output_folder(hyb_rec_class, self.dataset_version)
+                path = utils.get_hyperparams_search_output_folder(self.recommender_hybrid, self.dataset_version)
                 utils.copy_all_files(path, 
                                      path[:(len(path)-1)] + str(idx) + "/", 
                                      remove_source=False)
                 utils.optimization_terminated(optimized_hybrid, self.dataset_version, override = True)
-                rec1_class = hyb_rec_class
+                rec1_class = self.recommender_hybrid
                 
                 # Fix the normalization after first hybrid found
                 hyperparameters_range_dictionary["normalize"] = Categorical([optimized_hybrid.normalize])
+                self.final_folder += "-" + rec2_class.RECOMMENDER_NAME
                 
             else:
                 print("******* Validation Metric not improved! Model {} discarded. *******".format(rec2_class.RECOMMENDER_NAME))
             
             idx += 1
-            
+        
+        kwargs = {"load_scores_from_saved": True, 
+          "recs_on_urm_splitted": False, 
+          "user_id_array_val": utils.get_users_for_submission(), 
+          "new_item_scores_file_name_root": "on_all_urm_"}
+        on_end_search(**kwargs)
+        
             
             
 class ItemSimilarityKNNHybridOptimizer(IterativeHybridOptimizer):
@@ -111,7 +135,8 @@ class ItemSimilarityKNNHybridOptimizer(IterativeHybridOptimizer):
         self.alphas = []
         rec1_class = self.rec_classes_list[0]
         old_val_res = self.validation_results[0]
-        hyb_rec_class = ItemKNNSimilarityHybridRec
+        self.recommender_hybrid = ItemKNNSimilarityHybridRec
+        self.final_folder = rec1_class.RECOMMENDER_NAME
 
         hyperparameters_range_dictionary = {}
         hyperparameters_range_dictionary["topK"] = Integer(5, 1000)
@@ -141,7 +166,7 @@ class ItemSimilarityKNNHybridOptimizer(IterativeHybridOptimizer):
             
 #            output_folder_path = str(idx + 1) + "_"
             utils.bayesian_search(
-                hyb_rec_class, 
+                self.recommender_hybrid, 
                 recommender_input_args, 
                 hyperparameters_range_dictionary, 
                 evaluator_validation,
@@ -152,7 +177,7 @@ class ItemSimilarityKNNHybridOptimizer(IterativeHybridOptimizer):
                 block_size = block_size
             )
             
-            val_res = utils.get_best_res_on_validation(hyb_rec_class, 
+            val_res = utils.get_best_res_on_validation(self.recommender_hybrid, 
                                                  dataset_version=self.dataset_version, 
                                                  optimization=True)#,
                                                  #custom_folder_name = output_folder_path)
@@ -161,16 +186,19 @@ class ItemSimilarityKNNHybridOptimizer(IterativeHybridOptimizer):
                 old_val_res = val_res
                 
                 optimized_hybrid = utils.load_model_from_hyperparams_search_folder(self.URM_train,
-                                                             hyb_rec_class, 
+                                                             self.recommender_hybrid, 
                                                              dataset_version=self.dataset_version)
-                path = utils.get_hyperparams_search_output_folder(hyb_rec_class, self.dataset_version)
+                path = utils.get_hyperparams_search_output_folder(self.recommender_hybrid, self.dataset_version)
                 utils.copy_all_files(path, 
                                      path[:(len(path)-1)] + str(idx) + "/", 
                                      remove_source=False)
                 utils.optimization_terminated(optimized_hybrid, self.dataset_version, override = True)
-                rec1_class = hyb_rec_class
+                rec1_class = self.recommender_hybrid
+                self.final_folder += "-" + rec2_class.RECOMMENDER_NAME
                 
             else:
                 print("******* Validation Metric not improved! Model {} discarded. *******".format(rec2_class.RECOMMENDER_NAME))
             
             idx += 1
+            
+        on_end_search()

@@ -35,10 +35,10 @@ def urm_all_ones():
 def urm_all_ones_summed():
     # Import dataframe for URM matrix
     root_path = "data"
-    interactions_impression = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
+    interactions = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
     data_ICM_type = pd.read_csv(os.path.join(root_path,"data_ICM_type.csv"), low_memory=False)
-    interactions_impression["Data"] = 1
-    interactions = interactions_impression.drop(columns=["Impressions"])
+    interactions["Data"] = 1
+    interactions = interactions.drop(columns=["Impressions"])
     all_items = pd.concat([interactions["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
     n_users = len(interactions["UserID"].unique())
     n_items = len(all_items) # should be considered also the items present in the ICM but not here?
@@ -130,6 +130,22 @@ def icm_types():
                           (data_ICM_type["item_id"].values, data_ICM_type["feature_id"].values)),
                             shape = (n_items, n_types))
     return ICM_csr
+
+
+
+def icm_length():
+    # Import dataframe for ICM matrix
+    root_path = "data"
+    interactions = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
+    icm_length = pd.read_csv(os.path.join(root_path,"data_ICM_length.csv"), low_memory=False)
+    all_items = pd.concat([interactions["ItemID"], icm_length["item_id"]], ignore_index=True).unique() 
+    icm_length.drop(columns=["feature_id"], inplace=True)
+    missing_items = pd.DataFrame()
+    missing_items["item_id"] = all_items[np.isin(all_items, icm_length["item_id"], invert=True)] 
+    missing_items["data"] = 1
+    icm_length = pd.concat([icm_length, missing_items], ignore_index=True)
+    icm_length.sort_values(by=["item_id"])
+    return icm_length
     
     
     
@@ -146,32 +162,88 @@ def icm():
     ICM_one_hot = ICM_one_hot.reindex(list(range(0, n_items))).reset_index(drop=True).fillna(0)
     ICM_one_hot = sps.csr_matrix(ICM_one_hot, shape = (n_items, n_features))
     return ICM_one_hot
-    
-    
-    
-def ucm(URM_train: sps.spmatrix):
-    ucm = pd.DataFrame();
-    interactions = pd.read_csv(os.path.join("data", "interactions_and_impressions.csv"), low_memory=False)
-    ucm["UserID"] = interactions["UserID"].unique()
-    interactions.drop(columns=["Impressions"], inplace=True)
-    interactions_orig = interactions.copy()
-    interactions.loc[interactions["Data"] == 1, "Data"] = -1
-    interactions.loc[interactions["Data"] == 0, "Data"] = 1
-    interactions.drop(columns=["ItemID"], inplace=True)
-    seen_count = interactions[interactions["Data"] == 1].groupby(['UserID']).count()
-    info_count = interactions[interactions["Data"] == -1].groupby(['UserID']).count()
-    ucm["SeenInteractionCount"] = seen_count
-    ucm["InfoInteractionCount"] = info_count
-    ucm.fillna(0)
-    urm_seen = urm_visualization_all_ones_summed()
-    profile_length_seen = np.ediff1d(sps.csr_matrix(urm_seen).indptr)
-    ucm["ProfileSeen"] = profile_length_seen
 
+
+
+def get_info_norm_urm(train_percentage = 0.7, seed=1234):
     urm_info = urm_info_all_ones_summed()
-    profile_length_info = np.ediff1d(sps.csr_matrix(urm_info).indptr)
+    urm_visualizations = urm_visualization_all_ones_summed()
+    urm_train_vis, _ = split.split_train_in_two_percentage_global_sample(urm_visualizations, 
+                                                                                      train_percentage = train_percentage,
+                                                                                     seed=seed)
+    urm_train_info, urm_validation_info = split.split_train_in_two_percentage_global_sample(urm_info, 
+                                                                                      train_percentage = train_percentage,
+                                                                                     seed=seed)
+    del urm_info
+    del urm_visualizations
+    users_stats = statistics_per_user(urm_train_vis, urm_train_info)
+    users_stats[users_stats["ProfileInfo"] == 0] = 1
+
+    urm_train_info = urm_train_info / np.array(users_stats["ProfileInfo"])[:,None]
+    urm_train_info = sps.csr_matrix(urm_train_info.astype(np.float))
+    sps.save_npz(os.path.join("data","info_norm.npz"), urm_train_info)
+
+    return urm_train_info, urm_validation_info    
+    
+    
+    
+def get_vis_norm_urm(train_percentage = 0.7, seed=1234):
+    urm_visualizations = urm_visualization_all_ones_summed()
+    urm_info = urm_info_all_ones_summed()
+    urm_train_vis, urm_validation_vis = split.split_train_in_two_percentage_global_sample(urm_visualizations, 
+                                                                                      train_percentage = train_percentage,
+                                                                                     seed=seed)
+    urm_train_info, _ = split.split_train_in_two_percentage_global_sample(urm_info, 
+                                                                                      train_percentage = train_percentage,
+                                                                                     seed=seed)
+    del urm_info
+    del urm_visualizations
+    icm_len = icm_length()
+    users_stats = statistics_per_user(urm_train_vis, urm_train_info)
+    users_stats[users_stats["ProfileSeen"] == 0] = 1
+    urm_train_vis = urm_train_vis / np.transpose(np.array(icm_len["data"]))
+    urm_train_vis = urm_train_vis / np.array(users_stats["ProfileSeen"])[:,None]
+    urm_train_vis = sps.csr_matrix(urm_train_vis.astype(np.float))
+
+    sps.save_npz(os.path.join("data","vis_norm.npz"), urm_train_vis)
+
+    return urm_train_vis, urm_validation_vis
+                 
+                 
+
+def statistics_per_user(urm_seen_train, urm_info_train):
+    ucm = pd.DataFrame();
+
+    profile_length_seen = np.ediff1d(sps.csr_matrix(urm_seen_train).indptr)
+    seen_count = np.sum(urm_seen_train, axis=1)
+    ucm["ProfileSeen"] = profile_length_seen
+    ucm["SeenInteractionCount"] = seen_count
+
+    info_count = np.sum(urm_info_train, axis=1)
+    profile_length_info = np.ediff1d(sps.csr_matrix(urm_info_train).indptr)
     ucm["ProfileInfo"] = profile_length_info
+    ucm["InfoInteractionCount"] = info_count
     ucm = ucm.convert_dtypes()
     return ucm
+
+
+
+def statistics_per_item(urm_seen_train, urm_info_train):
+    item_stats = pd.DataFrame();
+
+    profile_length_seen = np.ediff1d(sps.csr_matrix(urm_seen_train.T).indptr)
+    seen_count = np.sum(urm_seen_train, axis=0)
+    seen_count = seen_count.transpose()
+    item_stats["ProfileSeen"] = profile_length_seen.T
+    item_stats["SeenInteractionCount"] = seen_count
+
+    info_count = np.sum(urm_info_train, axis=0)
+    info_count = info_count.transpose()
+    profile_length_info = np.ediff1d(sps.csr_matrix(urm_info_train.T).indptr)
+    item_stats["ProfileInfo"] = profile_length_info.T
+    item_stats["InfoInteractionCount"] = info_count
+    item_stats = item_stats.convert_dtypes()
+    return item_stats
 
 
 
@@ -186,19 +258,112 @@ def get_ICM_stacked(URM_csr):
     ICM_csr = sps.csr_matrix(get_URM_stacked(URM_csr).T)
     return ICM_csr
 
-def get_URM_scaled(train_percentage, k, seed, scale_type="minmax"):
-    URM = urm_all_ones_summed()
+
+
+def get_urm_visualization_summed_transformed(train_percentage, k=None, seed=None, transformation="minmax"):
+    URM = urm_visualization_all_ones_summed()
+    URM_all_ones = urm_all_ones()
     URM_train, URM_validation = split.split_train_in_two_percentage_global_sample(URM, 
                                                                                   train_percentage = train_percentage,
                                                                                   seed=seed)
-    URM_train = scale_URM_clusters(URM_train, k, scale_type)
-    return URM, URM_train, URM_validation
+    _, URM_validation_all_ones = split.split_train_in_two_percentage_global_sample(URM_all_ones, 
+                                                                                  train_percentage = train_percentage,
+                                                                                  seed=seed)
+    URM_val_coo = URM_validation.tocoo()
+    URM_val_all_ones_coo = URM_validation_all_ones.tocoo()
+    #assert (URM_val_coo.row == URM_val_all_ones_coo.row).all() and (URM_val_coo.col == URM_val_all_ones_coo.col).all() and (URM_val_all_ones_coo.data == np.ones(len(URM_val_all_ones_coo.data))).all(), "The validation and training set overlap!"
+    
+    if k is not None and k > 0: 
+        URM_train = scale_URM_per_clusters(URM_train, k, transformation)
+        URM = scale_URM_per_clusters(URM, k, transformation)
+    else:
+        URM_train = transform_sparse_matrix(URM_train, transformation)
+        URM = transform_sparse_matrix(URM, transformation)
+        
+    return URM, URM_train, URM_validation_all_ones
 
 
-def scale_URM_clusters(URM, k, scale_type):
+
+def get_urm_info_summed_transformed():
+    return
+
+
+
+def get_URM_all_ones_summed_transformed(train_percentage, k=None, seed=None, transformation="minmax"):
+    URM = urm_all_ones_summed()
+    URM_all_ones = urm_all_ones()
+    URM_train, URM_validation = split.split_train_in_two_percentage_global_sample(URM, 
+                                                                                  train_percentage = train_percentage,
+                                                                                  seed=seed)
+    _, URM_validation_all_ones = split.split_train_in_two_percentage_global_sample(URM_all_ones, 
+                                                                                  train_percentage = train_percentage,
+                                                                                  seed=seed)
+    URM_val_coo = URM_validation.tocoo()
+    URM_val_all_ones_coo = URM_validation_all_ones.tocoo()
+    assert (URM_val_coo.row == URM_val_all_ones_coo.row).all() and (URM_val_coo.col == URM_val_all_ones_coo.col).all() and (URM_val_all_ones_coo.data == np.ones(len(URM_val_all_ones_coo.data))).all(), "The validation and training set overlap!"
+    
+    if k is not None and k > 0: 
+        URM_train = scale_URM_per_clusters(URM_train, k, transformation)
+        URM = scale_URM_per_clusters(URM, k, transformation)
+    else:
+        URM_train = transform_sparse_matrix(URM_train, transformation)
+        URM = transform_sparse_matrix(URM, transformation)
+        
+    return URM, URM_train, URM_validation_all_ones
+
+
+
+def transform_sparse_matrix(sp_matrix, transformation):
+    sp_matrix_coo = sp_matrix.tocoo()
+    
+    if (transformation == "logistic"):
+        cluster["Data"] = cluster["Data"].apply(logistic_scale_implicit_rating)
+    elif (transformation == "tanh"):
+        cluster["Data"] = cluster["Data"].apply(tanh_scale_implicit_rating)
+    elif (transformation == "minmax"):
+        transformed_data = range_scaling(sp_matrix_coo.data)
+    elif (transformation == "std"):
+        transformed_data = std_norm(sp_matrix_coo.data)
+    else:
+        print("Wrong transformation type!")
+        
+    transformed_matrix = sps.csr_matrix((transformed_data,
+                          (sp_matrix_coo.row, sp_matrix_coo.col)),
+                             shape = sp_matrix_coo.shape) 
+    return transformed_matrix
+
+    
+    
+def scale_URM_per_clusters(URM, k, transformation):
     df = get_df_from_urm(URM)
-    clusters_list = get_clusters_from_df(df, k)
-    URM_scaled = get_urm_scaled_from_clusters(clusters_list, scale_type)
+    clusters_list = get_clusters_dfs_from_df(df, k)
+    
+    clusters = []
+    for cluster in clusters_list:
+        global max_implicit_rating
+        global min_implicit_rating
+        max_implicit_rating = cluster["Data"].max()
+        min_implicit_rating = cluster["Data"].min()
+        if (transformation == "logistic"):
+            cluster["Data"] = cluster["Data"].apply(logistic_scale_implicit_rating)
+        elif (transformation == "tanh"):
+            cluster["Data"] = cluster["Data"].apply(tanh_scale_implicit_rating)
+        elif (transformation == "minmax"):
+            cluster["Data"] = cluster["Data"].apply(ranged_min_max_scale_implicit_rating)
+        else:
+            print("Wrong scale type!")
+        clusters.append(cluster)
+    URM = pd.concat(clusters)
+    URM = URM.sort_values(by=['UserID',"ItemID"])
+    URM.drop(columns=["cluster"], inplace = True)
+    data_ICM_type = pd.read_csv(os.path.join("data","data_ICM_type.csv"), low_memory=False)
+    all_items = pd.concat([URM["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
+    n_users = len(URM["UserID"].unique())
+    n_items = len(all_items)
+    URM_scaled = sps.csr_matrix((URM["Data"].values,
+                          (URM["UserID"].values, URM["ItemID"].values)),
+                             shape = (n_users, n_items))    
+    
     return URM_scaled
     
     
@@ -211,7 +376,8 @@ def get_df_from_urm(URM):
     return df
 
 
-def get_clusters_from_df(df, k):
+
+def get_clusters_dfs_from_df(df, k):
     df["Data"] = df.groupby(["UserID", "ItemID"])["Data"].transform("sum")
     df.drop_duplicates(inplace=True)
     
@@ -242,51 +408,45 @@ def get_clusters_from_df(df, k):
         
     return clustered_data
 
+
+
 def logistic(x):
     return 1 / (1 + math.exp(-x))
+
+
 
 def logistic_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_rating=5):
     normalized_rating = implicit_rating/max_implicit_rating
     return min_rating + (max_rating - min_rating) * logistic(1 * normalized_rating)
 
-def tanh_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_rating=5):
+
+
+def tanh_scale_implicit_rating(implicit_rating, alpha=0.05, min_rating=0, max_rating=5):
     normalized_rating = implicit_rating/max_implicit_rating
     return min_rating + (max_rating - min_rating) * math.tanh(alpha * implicit_rating)
+
+
+
+def range_scaling(x, a=1, b=5):
+    max_x = np.max(x)
+    min_x = np.min(x)
+    return ((b - a)/(max_x - min_x)) * (x - min_x) + a
+
+
 
 def ranged_min_max_scale_implicit_rating(implicit_rating):
     return (4/(max_implicit_rating - min_implicit_rating))*(implicit_rating-min_implicit_rating)+1
 
-def get_urm_scaled_from_clusters(clusters_list, scale_type):
-    clusters = []
-    for cluster in clusters_list:
-        global max_implicit_rating
-        global min_implicit_rating
-        max_implicit_rating = cluster["Data"].max()
-        min_implicit_rating = cluster["Data"].min()
-        if (scale_type == "logistic"):
-            cluster["Data"] = cluster["Data"].apply(logistic_scale_implicit_rating)
-        elif (scale_type == "tanh"):
-            cluster["Data"] = cluster["Data"].apply(tanh_scale_implicit_rating)
-        elif (scale_type == "minmax"):
-            cluster["Data"] = cluster["Data"].apply(ranged_min_max_scale_implicit_rating)
-        else:
-            print("Wrong scale type!")
-        clusters.append(cluster)
-    URM = pd.concat(clusters)
-    URM = URM.sort_values(by=['UserID',"ItemID"])
-    URM.drop(columns=["cluster"], inplace = True)
-    data_ICM_type = pd.read_csv(os.path.join("data","data_ICM_type.csv"), low_memory=False)
-    all_items = pd.concat([URM["ItemID"], data_ICM_type["item_id"]], ignore_index=True).unique()
-    n_users = len(URM["UserID"].unique())
-    n_items = len(all_items)
-    URM = sps.csr_matrix((URM["Data"].values,
-                          (URM["UserID"].values, URM["ItemID"].values)),
-                             shape = (n_users, n_items))
-    return URM
+
+def std_norm(x):
+    mean_x = np.mean(x)
+    stddev_x = np.std(x)
+    return (x - mean_x) / stddev_x
+
         
 
 
-def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=20, scale_type="minmax", value_seen=1,value_info=0.5):
+def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=None, transformation=None, value_seen=None, value_info=None):
     if setSeed == True:
         seed = 1234
     else:
@@ -313,18 +473,25 @@ def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=Fal
         return urm_all_ones_summed(), icm_types()
     
     elif (dataset_version == "custom"):
+        assert value_seen is not None and value_info is not None, "value_seen or value_info is None!"
         URM = urm_seen_or_info(value_seen, value_info)
         URM_train, URM_validation = split.split_train_in_two_percentage_global_sample(URM, 
                                                                                   train_percentage = train_percentage,
                                                                                   seed=seed)
         return URM, URM_train, URM_validation, ICM
     
-    elif (dataset_version == "scaled"):
-        URM_csr, URM_train, URM_validation = get_URM_scaled(train_percentage, k, seed, scale_type)
+    elif (dataset_version == "interactions-summed-transformed"):
+        assert transformation is not None, "transformation is None!"
+        URM_csr, URM_train, URM_validation = get_URM_all_ones_summed_transformed(train_percentage, k, seed, transformation)
+        return URM_csr, URM_train, URM_validation, ICM
+    
+    elif (dataset_version == "visualizations-summed-transformed"):
+        assert transformation is not None, "transformation is None!"
+        URM_csr, URM_train, URM_validation = get_urm_visualization_summed_transformed(train_percentage, k, seed, transformation)
         return URM_csr, URM_train, URM_validation, ICM
     
     else:
-        print("Wrong dataset name. Try: \n - interactions-all-ones \n - stacked \n - interactions-summed")
+        print("Wrong dataset name. Try: \n - interactions-all-ones \n - stacked \n - interactions-summed \n - interactions-summed-transformed")
 
         
         
@@ -386,7 +553,7 @@ def global_effects(URM_biased, shrink_user=5000, shrink_item=3000):
     
 
 
-def bayesian_search(recommender_class, recommender_input_args, hyperparameters_range_dictionary, evaluator_validation, dataset_version="interactions-all-ones", n_cases = 60, perc_random_starts = 0.3, metric_to_optimize = "MAP", cutoff_to_optimize = 10, cust_output_folder_path=None, block_size=None, resume_from_saved=False):
+def bayesian_search(recommender_class, recommender_input_args, hyperparameters_range_dictionary, evaluator_validation, dataset_version="interactions-all-ones", n_cases = 60, perc_random_starts = 0.3, metric_to_optimize = "MAP", cutoff_to_optimize = 10, cust_output_folder_path=None, block_size=None, resume_from_saved=False, ICM=None, ICM_name=None):
 
     n_random_starts = int(n_cases * perc_random_starts)
     output_folder_path = get_hyperparams_search_output_folder(recommender_class, dataset_version=dataset_version, custom_folder_name=cust_output_folder_path)
@@ -406,13 +573,16 @@ def bayesian_search(recommender_class, recommender_input_args, hyperparameters_r
                                    save_model = "best",
                                    )
     
-    elif recommender_class is ItemKNNCFRec or recommender_class is UserKNNCFRec:
+    elif recommender_class is ItemKNNCBFRec or recommender_class is ItemKNNCFRec or recommender_class is UserKNNCFRec:
         if recommender_class is ItemKNNCFRec:
             recommender_class = ItemKNNCFRecommender
             knn_cf = True
         elif recommender_class is UserKNNCFRec:
             recommender_class = UserKNNCFRecommender
             knn_cf = True
+        elif recommender_class is ItemKNNCBFRec:
+            recommender_class = ItemKNNCBFRecommender
+            knn_cbf = True
         else:
             knn_cf = False
         
@@ -420,13 +590,31 @@ def bayesian_search(recommender_class, recommender_input_args, hyperparameters_r
             recommender_input_args_local = recommender_input_args
             urm = recommender_input_args_local.CONSTRUCTOR_POSITIONAL_ARGS[0] # the URM 
             runHyperparameterSearch_Collaborative(recommender_class, 
-                                      urm, 
-                                      n_cases = n_cases, 
-                                      n_random_starts = n_random_starts,
-                                      evaluator_validation = evaluator_validation,
-                                      metric_to_optimize = metric_to_optimize, 
-                                      cutoff_to_optimize = cutoff_to_optimize,
-                                      output_folder_path = output_folder_path)
+                                                  urm, 
+                                                  n_cases = n_cases, 
+                                                  n_random_starts = n_random_starts,
+                                                  resume_from_saved = resume_from_saved,
+                                                  evaluator_validation = evaluator_validation,
+                                                  metric_to_optimize = metric_to_optimize, 
+                                                  cutoff_to_optimize = cutoff_to_optimize,
+                                                  output_folder_path = output_folder_path)
+        elif knn_cbf:
+            recommender_input_args_local = recommender_input_args
+            urm = recommender_input_args_local.CONSTRUCTOR_POSITIONAL_ARGS[0] # the URM 
+            runHyperparameterSearch_Content(recommender_class, 
+                                            urm, 
+                                            ICM_object = ICM, 
+                                            ICM_name = ICM_name, 
+                                            n_cases = n_cases, 
+                                            n_random_starts = n_random_starts, 
+                                            resume_from_saved = resume_from_saved,
+                                            evaluator_validation = evaluator_validation,  
+                                            metric_to_optimize = metric_to_optimize, 
+                                            cutoff_to_optimize = cutoff_to_optimize,
+                                            output_folder_path = output_folder_path, 
+                                            parallelizeKNN = True, 
+                                            allow_weighting = True, 
+                                            allow_bias_ICM = True)
         
     else:
         hyperparameterSearch = SearchBayesianSkopt(recommender_class, evaluator_validation=evaluator_validation, block_size = block_size)

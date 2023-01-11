@@ -12,7 +12,7 @@ class DiffStructHybridRecommender(BaseRecommender):
     """
 
     RECOMMENDER_NAME = "DiffStructHybridRecommender"
-    RECOMMENDER_VERSION = "version"
+    RECOMMENDER_VERSION = "best_version"
 
     def __init__(self, URM_train, dataset_version="interactions-all-ones", recs_classes_list=[], load_scores_from_saved=True, recs_on_urm_splitted=None, user_id_array_val=None, new_item_scores_file_name_root = None, alphas_sum_to_one=False):
         super(DiffStructHybridRecommender, self).__init__(URM_train)
