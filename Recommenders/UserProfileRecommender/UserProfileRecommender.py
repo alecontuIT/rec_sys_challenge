@@ -128,7 +128,7 @@ class UserProfileRec(BaseRecommender):
         cf_recs_dict = {}
         cb_recs_dict = {}
 
-        if self.seed is not None or URM_val is None:
+        if self.seed is None or URM_val is None:
             for recommender_class in cf_rec_classes:
                 recommender_object = recommender_class(URM)
                 recommender_object.fit(**(utils.get_best_model_hyperparameters(recommender_class, dataset_version=self.dataset_version)))
