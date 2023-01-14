@@ -421,7 +421,7 @@ def logistic_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_r
 
 
 
-def tanh_scale_implicit_rating(implicit_rating, alpha=0.05, min_rating=0, max_rating=5):
+def tanh_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_rating=5):
     normalized_rating = implicit_rating/max_implicit_rating
     return min_rating + (max_rating - min_rating) * math.tanh(alpha * implicit_rating)
 
