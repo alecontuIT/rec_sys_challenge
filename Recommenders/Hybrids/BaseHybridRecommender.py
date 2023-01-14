@@ -23,7 +23,6 @@ class BaseHybridRecommender(BaseRecommender):
         self.recs_classes_list = not_trained_recs_classes.copy()
         self.recs_classes_names = []
 
-        print("\n\n\n\n" + str(not_trained_recs_classes) + "\n\n\n\n")
         for rec_class in self.recs_classes_list:
             assert not issubclass(rec_class, BaseHybridRecommender), "Error: hybrid recommenders must be provided as objects, already fitted.\n"
             rec = utils.load_best_model(self.URM_train, 

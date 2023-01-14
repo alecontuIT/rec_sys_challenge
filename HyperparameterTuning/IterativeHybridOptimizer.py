@@ -20,44 +20,38 @@ class IterativeHybridOptimizer():
         self.trained_recs = trained_recs
         self.rec_classes_list = not_trained_recs_classes
         
-        validation_results_tmp = []
+        self.validation_results = []
         for rec in self.trained_recs:
             if issubclass(rec.__class__, BaseHybridRecommender):
                 val_res = rec.get_best_res_on_validation(self, rec.RECOMMENDER_VERSION, metric="MAP")
             else:
                 val_res = utils.get_best_res_on_validation(rec_class, dataset_version=self.dataset_version)
             
-            validation_results_tmp.append(val_res)
+            self.validation_results.append(val_res)
+            
             print(val_res)
-
-        # sort by validation results
-        sorted_idx = np.argsort(validation_results_tmp)[::-1]
-        validation_results_tmp = np.take_along_axis(np.array(validation_results_tmp), sorted_idx, None)
-        self.trained_recs = np.take_along_axis(np.array(self.trained_recs), sorted_idx, None)
         
         
-        self.validation_results = []
         for rec_class in self.rec_classes_list:
             assert not issubclass(rec_class, BaseHybridRecommender), "Error: hybrid recommenders must be provided as objects, already fitted.\n"
+
+            rec = utils.load_best_model(self.URM_train, 
+                                            rec_class, 
+                                            dataset_version=self.dataset_version, 
+                                            optimization=True)
+            
             val_res = utils.get_best_res_on_validation(rec_class, dataset_version=self.dataset_version)
             self.validation_results.append(val_res)
+            self.trained_recs.append(rec)
             print(val_res)
         
         sorted_idx = np.argsort(self.validation_results)[::-1]
         self.validation_results = np.take_along_axis(np.array(self.validation_results), sorted_idx, None)
-        self.rec_classes_list = np.take_along_axis(np.array(self.rec_classes_list), sorted_idx, None)
+        self.trained_recs = np.take_along_axis(np.array(self.trained_recs), sorted_idx, None)
         
-        self.is_fitted_mask = [False] * len(self.validation_results)
-        np.append(self.validation_results, validation_results_tmp)
-        self.is_fitted_mask.extend([True] * len(validation_results_tmp))
-        del validation_results_tmp
+        self.is_fitted_mask = [True] * len(self.validation_results)
         
-        # sort by validation results
-        sorted_idx = np.argsort(self.validation_results)[::-1]
-        self.validation_results = np.take_along_axis(np.array(self.validation_results), sorted_idx, None)
-        self.is_fitted_mask = np.take_along_axis(np.array(self.is_fitted_mask), sorted_idx, None)
         print(self.validation_results)     
-        print(str(self.is_fitted_mask))
         
         
     
