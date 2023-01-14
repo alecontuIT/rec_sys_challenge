@@ -444,7 +444,22 @@ def std_norm(x):
     return (x - mean_x) / stddev_x
 
         
+def clusterize(X, k):
+    kmeans = KMeans(n_clusters=k)
+    kmeans.fit(X)
+    return kmeans.labels_
 
+def get_ucm():
+    urm_visualizations = urm_visualization_all_ones_summed()
+    urm_info = urm_info_all_ones_summed()
+    urm_train_vis, _ = split.split_train_in_two_percentage_global_sample(urm_visualizations, 
+                                                                                      train_percentage = 0.7,
+                                                                                     seed=1234)
+    urm_train_info, _ = split.split_train_in_two_percentage_global_sample(urm_info, 
+                                                                                      train_percentage = 0.7,
+                                                                                     seed=1234)
+    ucm = statistics_per_user(urm_train_vis, urm_train_info)
+    return ucm
 
 def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=None, transformation=None, value_seen=None, value_info=None):
     if setSeed == True:
