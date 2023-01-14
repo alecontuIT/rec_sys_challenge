@@ -116,8 +116,23 @@ class UserProfileRec(BaseRecommender):
                 users_not_in_group = sorted_users[users_not_in_group_flag]
                 users_not_in_group_list.append(users_not_in_group)
         
-        elif self.clustering_strategy == "kmeans":
-            
+        elif self.clustering_strategy == "kmeans_ucm":
+            ucm = utils.get_ucm() #crea metodo in utils
+            X = ucm[["ProfileSeen","SeenInteractionCount","ProfileInfo","InfoInteractionCount"]].values
+            k = 8
+            ucm["cluster"] = utils.clusterize(X, k) #aggiungi metodo in utils
+            ucm["user_id"] = ucm.index
+            user_ids = ucm["user_id"]
+            users_not_in_group_list = []
+            users_in_group_list = []
+            for i in range(k):
+                users_in_group = ucm[ucm['cluster'] == i]
+                users_in_group = users_in_group["user_id"]
+                users_in_group_list.append(np.array(users_in_group))
+                users_not_in_group_flag = np.isin(user_ids, users_in_group, invert=True)
+                users_not_in_group = user_ids[users_not_in_group_flag]
+                users_not_in_group_list.append(np.array(users_not_in_group))
+        elif self.clustering_strategy == "kmeans_profile_length":
             print("\n")
     
         return users_not_in_group_list, users_in_group_list
