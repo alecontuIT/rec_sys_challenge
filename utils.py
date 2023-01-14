@@ -13,6 +13,7 @@ from recmodels import *
 from skopt.space import Real
 from HyperparameterTuning.run_hyperparameter_search import runHyperparameterSearch_Collaborative
 from sklearn.cluster import KMeans
+from OutlierDetection.UnivariateAnomalyDetector import *
     
     
     
@@ -136,15 +137,17 @@ def icm_types():
 def icm_length():
     # Import dataframe for ICM matrix
     root_path = "data"
+    max_len = 9999
     interactions = pd.read_csv(os.path.join(root_path, "interactions_and_impressions.csv"), low_memory=False)
     icm_length = pd.read_csv(os.path.join(root_path,"data_ICM_length.csv"), low_memory=False)
     all_items = pd.concat([interactions["ItemID"], icm_length["item_id"]], ignore_index=True).unique() 
     icm_length.drop(columns=["feature_id"], inplace=True)
     missing_items = pd.DataFrame()
     missing_items["item_id"] = all_items[np.isin(all_items, icm_length["item_id"], invert=True)] 
-    missing_items["data"] = 1
+    missing_items["data"] = np.nan
     icm_length = pd.concat([icm_length, missing_items], ignore_index=True)
-    icm_length.sort_values(by=["item_id"])
+    icm_length.sort_values(by=["item_id"], inplace=True, ignore_index=True)
+    icm_length.loc[icm_length["data"] > max_len, "data"] = np.nan
     return icm_length
     
     
@@ -167,47 +170,96 @@ def icm():
 
 def get_info_norm_urm(train_percentage = 0.7, seed=1234):
     urm_info = urm_info_all_ones_summed()
-    urm_visualizations = urm_visualization_all_ones_summed()
-    urm_train_vis, _ = split.split_train_in_two_percentage_global_sample(urm_visualizations, 
+    urm_vis = urm_visualization_all_ones_summed()
+    urm_train_vis, _ = split.split_train_in_two_percentage_global_sample(urm_vis, 
                                                                                       train_percentage = train_percentage,
                                                                                      seed=seed)
+    users_stats = statistics_per_user(urm_vis, urm_info)
+    del urm_vis
+    
     urm_train_info, urm_validation_info = split.split_train_in_two_percentage_global_sample(urm_info, 
                                                                                       train_percentage = train_percentage,
                                                                                      seed=seed)
-    del urm_info
-    del urm_visualizations
-    users_stats = statistics_per_user(urm_train_vis, urm_train_info)
-    users_stats[users_stats["ProfileInfo"] == 0] = 1
-
-    urm_train_info = urm_train_info / np.array(users_stats["ProfileInfo"])[:,None]
+    users_stats_train = statistics_per_user(urm_train_vis, urm_train_info)
+    del urm_train_vis
+    
+    replace_outliers_univariate(urm_info, 
+                                replace_with="max", 
+                                strategy="MAD")
+    replace_outliers_univariate(urm_train_info, 
+                                replace_with="max", 
+                                strategy="MAD")
+    
+    users_stats_train[users_stats_train["InfoInteractionCount"] == 0] = 1
+    
+    urm_train_info = urm_train_info / np.array(users_stats_train["InfoInteractionCount"])[:,None]
     urm_train_info = sps.csr_matrix(urm_train_info.astype(np.float))
-    sps.save_npz(os.path.join("data","info_norm.npz"), urm_train_info)
 
-    return urm_train_info, urm_validation_info    
+    users_stats[users_stats["InfoInteractionCount"] == 0] = 1
+    urm_info = urm_info / np.array(users_stats["InfoInteractionCount"])[:,None]
+    urm_info = sps.csr_matrix(urm_info.astype(np.float))
+    
+    urm_validation_info.data = np.ones(len(urm_validation_info.data))
+    
+    sps.save_npz(os.path.join("data","info_norm.npz"), urm_info)
+    sps.save_npz(os.path.join("data","info_norm_train.npz"), urm_train_info)
+    sps.save_npz(os.path.join("data","info_norm_val.npz"), urm_validation_info)
+
+    return urm_info, urm_train_info, urm_validation_info    
     
     
     
 def get_vis_norm_urm(train_percentage = 0.7, seed=1234):
-    urm_visualizations = urm_visualization_all_ones_summed()
+    urm_vis = urm_visualization_all_ones_summed()
     urm_info = urm_info_all_ones_summed()
-    urm_train_vis, urm_validation_vis = split.split_train_in_two_percentage_global_sample(urm_visualizations, 
-                                                                                      train_percentage = train_percentage,
-                                                                                     seed=seed)
     urm_train_info, _ = split.split_train_in_two_percentage_global_sample(urm_info, 
-                                                                                      train_percentage = train_percentage,
-                                                                                     seed=seed)
+                                                                          train_percentage = train_percentage,
+                                                                          seed=seed)
+    users_stats = statistics_per_user(urm_vis, urm_info)
+    items_stats = statistics_per_item(urm_vis, urm_info)
+
     del urm_info
-    del urm_visualizations
+    
+    urm_train_vis, urm_validation_vis = split.split_train_in_two_percentage_global_sample(urm_vis, 
+                                                                                          train_percentage = train_percentage,
+                                                                                          seed=seed)
+    users_stats_train = statistics_per_user(urm_train_vis, urm_train_info)
+    items_stats_train = statistics_per_item(urm_train_vis, urm_train_info)
+    del urm_train_info
     icm_len = icm_length()
-    users_stats = statistics_per_user(urm_train_vis, urm_train_info)
-    users_stats[users_stats["ProfileSeen"] == 0] = 1
-    urm_train_vis = urm_train_vis / np.transpose(np.array(icm_len["data"]))
-    urm_train_vis = urm_train_vis / np.array(users_stats["ProfileSeen"])[:,None]
+    icm_len_train = icm_len.copy()
+    
+    mask = np.isnan(icm_len_train["data"])
+    mask = np.transpose(mask.values)
+    missing_values_len_train = urm_train_vis.max(0).toarray()[0]
+    missing_values_len_train = missing_values_len_train[mask]
+    missing_values_len_train[missing_values_len_train == 0] = 1
+    icm_len_train.loc[np.isnan(icm_len_train["data"].values), "data"] = missing_values_len_train
+    
+    users_stats_train[users_stats_train["ProfileSeen"] == 0] = 1
+    urm_train_vis = urm_train_vis / np.transpose(np.array(icm_len_train["data"]))
+    #urm_train_vis = urm_train_vis / np.array(users_stats["ProfileSeen"])[:,None]
     urm_train_vis = sps.csr_matrix(urm_train_vis.astype(np.float))
+    
+    mask = np.isnan(icm_len["data"])
+    mask = np.transpose(mask.values)
+    missing_values_len_train = urm_vis.max(0).toarray()[0]
+    missing_values_len_train = missing_values_len_train[mask]
+    missing_values_len_train[missing_values_len_train == 0] = 1
+    icm_len.loc[np.isnan(icm_len["data"].values), "data"] = missing_values_len_train
+    
+    users_stats[users_stats["ProfileSeen"] == 0] = 1
+    urm_vis = urm_vis / np.transpose(np.array(icm_len["data"]))
+    #urm_vis = urm_vis / np.array(users_stats["ProfileSeen"])[:,None]
+    urm_vis = sps.csr_matrix(urm_vis.astype(np.float))
 
-    sps.save_npz(os.path.join("data","vis_norm.npz"), urm_train_vis)
+    urm_validation_vis.data = np.ones(len(urm_validation_vis.data))
+    
+    sps.save_npz(os.path.join("data","vis_norm.npz"), urm_vis)
+    sps.save_npz(os.path.join("data","vis_norm_train.npz"), urm_train_vis)
+    sps.save_npz(os.path.join("data","vis_norm_val.npz"), urm_validation_vis)
 
-    return urm_train_vis, urm_validation_vis
+    return urm_vis, urm_train_vis, urm_validation_vis
                  
                  
 
@@ -247,6 +299,42 @@ def statistics_per_item(urm_seen_train, urm_info_train):
 
 
 
+def remove_outliers_univariate(sparse_matrix, strategy="MAD"):
+    sparse_matrix = sparse_matrix.tocoo()
+    if strategy=="MAD":
+        outliers_mask = get_mad_outliers(sparse_matrix.data.reshape(-1, 1))
+    elif strategy=="STD":
+        outliers_mask = get_stddev_outliers(sparse_matrix.data.reshape(-1, 1))
+    outliers_mask = np.logical_not(outliers_mask)
+    
+    rows = sparse_matrix.row[outliers_mask]
+    cols = sparse_matrix.col[outliers_mask]
+    data = sparse_matrix.data[outliers_mask]
+    
+    return sps.csr_matrix((data, (rows, cols)), shape = sparse_matrix.shape) 
+
+
+
+def replace_outliers_univariate(sparse_matrix, replace_with="max", strategy="MAD", tol=3):
+    sparse_matrix = sparse_matrix.tocoo()
+    if strategy=="MAD":
+        outliers_mask = get_mad_outliers(sparse_matrix.data.reshape(-1, 1), tolerance=tol)
+    elif strategy=="STD":
+        outliers_mask = get_stddev_outliers(sparse_matrix.data.reshape(-1, 1))
+        
+    not_outliers_mask = np.logical_not(outliers_mask)
+    
+    if replace_with=="max":
+        replacing = sparse_matrix.data[not_outliers_mask].max()
+    else:
+        replacing = replace_with
+    
+    sparse_matrix.data[outliers_mask] = replacing
+    
+    return sparse_matrix
+    
+        
+    
 def get_URM_stacked(URM_csr):
     URM_csr = sps.vstack([URM_csr, icm().T])
     URM_csr = sps.csr_matrix(URM_csr)
@@ -324,6 +412,8 @@ def transform_sparse_matrix(sp_matrix, transformation):
         transformed_data = range_scaling(sp_matrix_coo.data)
     elif (transformation == "std"):
         transformed_data = std_norm(sp_matrix_coo.data)
+    elif (transformation == "robust"):
+        transformed_data = robust_norm(sp_matrix_coo.data)
     else:
         print("Wrong transformation type!")
         
@@ -422,7 +512,6 @@ def logistic_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_r
 
 
 def tanh_scale_implicit_rating(implicit_rating, alpha=1, min_rating=0, max_rating=5):
-    normalized_rating = implicit_rating/max_implicit_rating
     return min_rating + (max_rating - min_rating) * math.tanh(alpha * implicit_rating)
 
 
@@ -449,6 +538,7 @@ def clusterize(X, k):
     kmeans.fit(X)
     return kmeans.labels_
 
+
 def get_ucm():
     urm_visualizations = urm_visualization_all_ones_summed()
     urm_info = urm_info_all_ones_summed()
@@ -460,6 +550,16 @@ def get_ucm():
                                                                                      seed=1234)
     ucm = statistics_per_user(urm_train_vis, urm_train_info)
     return ucm
+
+
+def robust_norm(x):
+    x = x.reshape(-1, 1)
+    from sklearn.preprocessing import RobustScaler
+    transformer = RobustScaler().fit(x)
+    tmp = transformer.transform(x)
+    return tmp.reshape(1, -1)[0]
+
+
 
 def get_data_global_sample(dataset_version, train_percentage = 0.70, setSeed=False, k=None, transformation=None, value_seen=None, value_info=None):
     if setSeed == True:
@@ -666,7 +766,7 @@ def optimization_terminated(recommender, dataset_version, override = False):
             if not os.path.exists(train_folder):
                     os.makedirs(train_folder)
             print(hyperparam_search_folder, train_folder)
-            copy_all_files(hyperparam_search_folder, train_folder, remove_source=False)
+            copy_all_files(hyperparam_search_folder, train_folder, remove_source_folder=False)
         
     else:
         print("Error! It already exists the folder " + recommendations_folder)
@@ -862,16 +962,16 @@ def load_item_scores(recommender_class,  dataset_version, fast = True, new_item_
     
     
 
-def fit_best_recommender(recommender_class, URM, dataset_version, **kwargs):
+def fit_best_recommender(recommender_class, URM, dataset_version, optimization=False, **kwargs):
     best_hyperparameters = get_best_model_hyperparameters(recommender_class, dataset_version)
-    recommender = recommender_class(*get_kwargs_constructor(recommender_class, URM, dataset_version), **kwargs)
+    recommender = recommender_class(*get_kwargs_constructor(recommender_class, URM, dataset_version, optimization), **kwargs)
     recommender.fit(**best_hyperparameters)
     return recommender
     
     
     
 def load_best_model(URM, rec_class, dataset_version="interactions-all-ones", optimization=False, **kwargs):
-    rec = rec_class(*get_kwargs_constructor(rec_class, URM, dataset_version), **kwargs)
+    rec = rec_class(*get_kwargs_constructor(rec_class, URM, dataset_version, optimization), **kwargs)
     if optimization:
         folder = os.path.join(get_folder_best_model(rec_class, dataset_version), "optimization")
         rec.load_model(folder, file_name = rec.RECOMMENDER_NAME + "_best_model.zip" )
@@ -882,8 +982,8 @@ def load_best_model(URM, rec_class, dataset_version="interactions-all-ones", opt
 
 
 
-def load_model_from_hyperparams_search_folder(URM, rec_class, dataset_version="interactions-all-ones", **kwargs):
-    rec = rec_class(*get_kwargs_constructor(rec_class, URM, dataset_version), **kwargs)
+def load_model_from_hyperparams_search_folder(URM, rec_class, dataset_version="interactions-all-ones", optimization=True, **kwargs):
+    rec = rec_class(*get_kwargs_constructor(rec_class, URM, dataset_version, optimization), **kwargs)
     folder = get_hyperparams_search_output_folder(rec_class, dataset_version=dataset_version, custom_folder_name=None)
     rec.load_model(folder, file_name = rec.RECOMMENDER_NAME + "_best_model.zip" )
     return rec
@@ -909,25 +1009,29 @@ def listdir_nohidden(path):
 
 
 
-def copy_all_files(source_folder, destination_folder, remove_source=False):
+def copy_all_files(source_folder, destination_folder, remove_source_folder=False):
     if os.path.exists(source_folder):
         for file_name in os.listdir(source_folder):
         
             # construct full file path
             source = os.path.join(source_folder, file_name)
             destination = os.path.join(destination_folder, file_name)
+            print(source)
         
             # copy only files
             if os.path.isfile(source):
                 if not os.path.exists(destination_folder):
                     os.makedirs(destination_folder)
                 shutil.copy(source, destination)
-                if remove_source:
-                    os.remove(source)
+                
+            else:
+                shutil.copytree(source, destination)
+        if remove_source_folder:
+            shutil.rmtree(source_folder)
 
 
 
-def get_kwargs_constructor(rec_class, URM, dataset_version="interactions-all-ones"):
+def get_kwargs_constructor(rec_class, URM, dataset_version="interactions-all-ones", optimization=True):
     if rec_class is ItemKNNCBFRec:
         return [URM, icm()]
     if rec_class is EASE_R_Rec:
@@ -939,7 +1043,7 @@ def get_kwargs_constructor(rec_class, URM, dataset_version="interactions-all-one
     if rec_class is LightFMRecommender:
         return [URM, icm(), ucm()]
     if rec_class is DiffStructHybridRecommender:
-        return [URM, dataset_version]
+        return [URM, optimization, dataset_version]
     else:
         return [URM]
 
