@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import utils
+from Recommenders.Hybrids.BaseHybridRecommender import BaseHybridRecommender
 from Recommenders.Hybrids.DiffStructHybridRecommender import DiffStructHybridRecommender
 from recmodels import ItemKNNSimilarityHybridRec
 from Evaluation.Evaluator import EvaluatorHoldout
@@ -8,30 +9,62 @@ from HyperparameterTuning.SearchAbstractClass import SearchInputRecommenderArgs
 from skopt.space import Categorical, Real, Integer
         
 class IterativeHybridOptimizer():
-    def __init__(self, URM_all, URM_train, URM_val, rec_classes_list, dataset_version, load_scores_from_saved=True):
-        self.URM_train = URM_train
-        self.URM_all = URM_all
-        self.rec_classes_list = rec_classes_list
-        self.dataset_version = dataset_version
-        self.URM_val = URM_val
-        self.load_scores_from_saved = load_scores_from_saved
+    def __init__(self, URM_all, URM_train, URM_val, dataset_version, not_trained_recs_classes=[], trained_recs=[]):
         
-        # load models trained on train part of the dataset
-        self.recs = []
+        self.URM_train = URM_train
+        self.URM_val = URM_val
+        self.URM_all = URM_all
+        
+        self.dataset_version = dataset_version      
+            
+        self.trained_recs = trained_recs
+        self.rec_classes_list = not_trained_recs_classes
+        
+        validation_results_tmp = []
+        for rec in self.trained_recs:
+            if issubclass(rec.__class__, BaseHybridRecommender):
+                val_res = rec.get_best_res_on_validation(self, rec.RECOMMENDER_VERSION, metric="MAP")
+            else:
+                val_res = utils.get_best_res_on_validation(rec_class, dataset_version=self.dataset_version)
+            
+            validation_results_tmp.append(val_res)
+            print(val_res)
+
+        # sort by validation results
+        sorted_idx = np.argsort(validation_results_tmp)[::-1]
+        validation_results_tmp = np.take_along_axis(np.array(validation_results_tmp), sorted_idx, None)
+        self.trained_recs = np.take_along_axis(np.array(self.trained_recs), sorted_idx, None)
+        
+        
         self.validation_results = []
         for rec_class in self.rec_classes_list:
+            assert not issubclass(rec_class, BaseHybridRecommender), "Error: hybrid recommenders must be provided as objects, already fitted.\n"
             val_res = utils.get_best_res_on_validation(rec_class, dataset_version=self.dataset_version)
             self.validation_results.append(val_res)
             print(val_res)
         
-        # sort by validation results
         sorted_idx = np.argsort(self.validation_results)[::-1]
         self.validation_results = np.take_along_axis(np.array(self.validation_results), sorted_idx, None)
         self.rec_classes_list = np.take_along_axis(np.array(self.rec_classes_list), sorted_idx, None)
-        print(self.validation_results, self.rec_classes_list)
+        
+        self.is_fitted_mask = [False] * len(self.validation_results)
+        np.append(self.validation_results, validation_results_tmp)
+        self.is_fitted_mask.extend([True] * len(validation_results_tmp))
+        del validation_results_tmp
+        
+        # sort by validation results
+        sorted_idx = np.argsort(self.validation_results)[::-1]
+        self.validation_results = np.take_along_axis(np.array(self.validation_results), sorted_idx, None)
+        self.is_fitted_mask = np.take_along_axis(np.array(self.is_fitted_mask), sorted_idx, None)
+        print(self.validation_results)     
+        print(str(self.is_fitted_mask))
+        
+        
     
     def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10):
         pass
+    
+    
     
     def on_end_search(**kwargs):
         rec = utils.load_best_model(self.URM_all, 
@@ -41,45 +74,82 @@ class IterativeHybridOptimizer():
                       **kwargs)
         utils.submission(rec, dataset_version, override=True)
         
-        folder = utils.get_folder_best_model(self.recommender_hybrid, self.dataset_version)
-        for file in folder:
-            if "hyperparams_search" in file or self.recommender_hybrid.RECOMMENDER_VERSION in file:
+        folder = "recommendations"
+        folder = os.path.join(folder, dataset_version)
+        folder = os.path.join(folder, DiffStructHybridRecommender.RECOMMENDER_NAME) 
+        for file in os.listdir(folder):
+            if "hyperparams_search" in file or DiffStructHybridRecommender.RECOMMENDER_VERSION in file:
                 utils.copy_all_files(os.path.join(folder, file), 
-                                     os.path.join(os.path.join(folder, self.final_folder), file), 
-                                     remove_source=True)
+                             os.path.join(os.path.join(folder, self.final_folder), file), 
+                             remove_source_folder=True)
+                
             
             
 class DiffStructHybridOptimizer(IterativeHybridOptimizer):
-    def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10):
+    def get_hybrid_weights_range_dict(self, number_of_recommender, low=0., high=1., prior="uniform"):
+        hyperpar_dict = {}
+        for i in range(number_of_recommender):
+            weight = "w"+str(i)
+            hyperpar_dict[weight] = Real(low=low, high=high, prior=prior)
+        return hyperpar_dict
+    
+    
+    
+    def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=False, allow_alphas_sum_to_one=True):
         self.alphas = []
-        rec1_class = self.rec_classes_list[0]
-        self.final_folder = rec1_class.RECOMMENDER_NAME
         old_val_res = self.validation_results[0]
         self.recommender_hybrid = DiffStructHybridRecommender
+        optimized_hybrid = None
 
-        hyperparameters_range_dictionary = utils.get_hybrid_weights_range_dict(2, low=0., high=10., prior="uniform")
-        hyperparameters_range_dictionary["normalize"] = Categorical(["L1", None, "fro", "inf", "-inf"])
-        idx = 0
+        hyperparameters_range_dictionary = self.get_hybrid_weights_range_dict(2, low=0., high=10., prior="uniform")
+        if allow_normalization:
+            hyperparameters_range_dictionary["normalize"] = Categorical(["L1", None, "fro", "inf", "-inf"])
+        else:
+            hyperparameters_range_dictionary["normalize"] = Categorical([None])
+            
+        hyperparameters_range_dictionary["alphas_sum_to_one"] = Categorical([allow_alphas_sum_to_one])
+
         evaluator_validation = EvaluatorHoldout(self.URM_val, cutoff_list=[cutoff])
         if block_size == None:
             block_size = len(evaluator_validation.users_to_evaluate)
             
-        for rec2_class in self.rec_classes_list[1:]:
+        not_trained_recs_classes_arg = []
+        not_trained_recs_classes_idx = 0
+        trained_recs_arg = []
+        trained_recs_idx = 0
+        
+        if self.is_fitted_mask[0]:
+            trained_recs_arg.append(self.trained_recs[trained_recs_idx])
+            trained_recs_idx += 1
+        else:
+            not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
+            not_trained_recs_classes_idx += 1
+            
+        for idx in range(1, len(self.validation_results)):
+            if self.is_fitted_mask[idx]:
+                trained_recs_arg.append(self.trained_recs[trained_recs_idx])
+                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
+                trained_recs_idx += 1
+            else:
+                not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
+                string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
+                not_trained_recs_classes_idx += 1
+                
+            dict_args = {
+                "recs_on_urm_splitted": True, 
+                "dataset_version": self.dataset_version, 
+                "not_trained_recs_classes": not_trained_recs_classes_arg, 
+                "trained_recs": trained_recs_arg
+            }
+
             recommender_input_args = SearchInputRecommenderArgs(
-                CONSTRUCTOR_POSITIONAL_ARGS = [self.URM_train, 
-                                               self.dataset_version, 
-                                               [rec1_class, rec2_class], 
-                                               self.load_scores_from_saved, 
-                                               True, 
-                                               evaluator_validation.users_to_evaluate,
-                                               None] ,   
-                CONSTRUCTOR_KEYWORD_ARGS = {},
+                CONSTRUCTOR_POSITIONAL_ARGS = [self.URM_train] ,   
+                CONSTRUCTOR_KEYWORD_ARGS = dict_args,
                 FIT_POSITIONAL_ARGS = [],
                 FIT_KEYWORD_ARGS = {},
                 EARLYSTOPPING_KEYWORD_ARGS = {}, 
             )
             
-#            output_folder_path = str(idx + 1) + "_"
             utils.bayesian_search(
                 self.recommender_hybrid, 
                 recommender_input_args, 
@@ -88,45 +158,34 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 dataset_version=self.dataset_version,
                 n_cases=n_cases,
                 perc_random_starts=perc_random_starts,
- #               cust_output_folder_path = output_folder_path,
                 block_size = block_size
             )
             
-            val_res = utils.get_best_res_on_validation(self.recommender_hybrid, 
-                                                 dataset_version=self.dataset_version, 
-                                                 optimization=True)#,
-                                                 #custom_folder_name = output_folder_path)
+            tmp = self.recommender_hybrid(self.URM_train, True, self.dataset_version)
+            val_res = tmp.get_best_res_on_validation_during_search()
+            
             if val_res > old_val_res:
-                print("******* Validation Metric improved! Model {} kept. *******".format(rec2_class.RECOMMENDER_NAME))
+                print("******* Validation Metric improved! Validation result of Model {} equal to {}. Model kept. *******".format(string_name, val_res))
                 old_val_res = val_res
                 
                 optimized_hybrid = utils.load_model_from_hyperparams_search_folder(self.URM_train,
                                                              self.recommender_hybrid, 
-                                                             dataset_version=self.dataset_version, 
-                                                             load_scores_from_saved=self.load_scores_from_saved, 
-                                                             recs_on_urm_splitted=True, 
-                                                             user_id_array_val=evaluator_validation.users_to_evaluate)
-                path = utils.get_hyperparams_search_output_folder(self.recommender_hybrid, self.dataset_version)
-                utils.copy_all_files(path, 
-                                     path[:(len(path)-1)] + str(idx) + "/", 
-                                     remove_source=False)
+                                                             dataset_version=self.dataset_version)
+
                 utils.optimization_terminated(optimized_hybrid, self.dataset_version, override = True)
-                rec1_class = self.recommender_hybrid
+                trained_recs_arg = []
+                not_trained_recs_classes_arg = []
+                trained_recs_arg.append(optimized_hybrid)
                 
                 # Fix the normalization after first hybrid found
-                hyperparameters_range_dictionary["normalize"] = Categorical([optimized_hybrid.normalize])
-                self.final_folder += "-" + rec2_class.RECOMMENDER_NAME
+                if allow_normalization:
+                    hyperparameters_range_dictionary["normalize"] = Categorical([optimized_hybrid.normalize])
                 
             else:
-                print("******* Validation Metric not improved! Model {} discarded. *******".format(rec2_class.RECOMMENDER_NAME))
+                print("******* Validation Metric not improved! Validation result of Model {} equal to {}. Model discarded. *******".format(string_name, val_res))
+                not_trained_recs_classes_arg = []
             
-            idx += 1
-        
-        kwargs = {"load_scores_from_saved": True, 
-          "recs_on_urm_splitted": False, 
-          "user_id_array_val": utils.get_users_for_submission(), 
-          "new_item_scores_file_name_root": "on_all_urm_"}
-        on_end_search(**kwargs)
+        return optimized_hybrid
         
             
             
