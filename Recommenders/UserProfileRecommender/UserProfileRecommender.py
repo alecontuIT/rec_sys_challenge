@@ -217,22 +217,15 @@ class UserProfileRec(BaseRecommender):
             for (rec_class, rec_version), results in results_cf_rec_per_group.items():
                 if results[group_idx] > curr_best_res:
                     curr_best_res = results[group_idx]
-                    curr_best = (rec_class, rec_version)
                     curr_best_cf = (rec_class, rec_version)
-            for (rec_class, rec_version), results in results_cb_rec_per_group.items():
-                if results[group_idx] > curr_best_res:
-                    curr_best_res = results[group_idx]
-                    curr_best = (rec_class, rec_version)
-            if curr_best_cf == curr_best:
-                best_recs_cf.append(curr_best_cf)
-            else:
-                best_recs_cb.append(curr_best)
-            self.best_rec_per_group_list.append(curr_best)
+            
+            best_recs_cf.append(curr_best_cf)
+            self.best_rec_per_group_list.append(curr_best_cf)
     
         self.best_cf_recs_class_no_duplicates = []
         self.best_cf_recs_version_no_duplicates = []
         for (rec_class, rec_version) in best_recs_cf:
-            if rec_class not in self.best_cf_recs_class_no_duplicates:
+            if rec_class not in self.best_cf_recs_class_no_duplicates and rec_version not in self.best_cf_recs_version_no_duplicates:
                 self.best_cf_recs_class_no_duplicates.append(rec_class)
                 self.best_cf_recs_version_no_duplicates.append(rec_version)
             
@@ -267,7 +260,7 @@ class UserProfileRec(BaseRecommender):
         self.best_cf_fitted_rec_dict, self.best_cb_fitted_rec_dict = self.fit_all_recs(
             self.best_cf_recs_class_no_duplicates,
             self.best_cf_recs_version_no_duplicates,
-            best_cb_recs_class_no_duplicates, 
+            self.best_cb_recs_class_no_duplicates, 
             URM, 
             with_validation,
             self.ICM_train)
