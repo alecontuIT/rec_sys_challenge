@@ -331,7 +331,7 @@ class UserProfileRec(BaseRecommender):
     
     
     
-    def optimize_2hybrids_on_group(self, num_groups, hybrid_class, trained_recs_arg, n_cases=50, perc_random_starts=0.3, cutoff=10, metric="MAP", clustering_strategy="equal-parts", block_size=None, allow_normalization=True, allow_alphas_sum_to_one=False, root=""):
+    def optimize_2hybrids_on_group(self, num_groups, hybrid_class, trained_recs_arg, n_cases=50, perc_random_starts=0.3, cutoff=10, metric="MAP", clustering_strategy="equal-parts", block_size=None, allow_normalization=True, allow_alphas_sum_to_one=False, root="", previous_hyb=[]):
         self.clustering_strategy = clustering_strategy
         self.num_groups = num_groups
         self.cutoff = cutoff
@@ -360,6 +360,9 @@ class UserProfileRec(BaseRecommender):
                                                     cutoff_list=[10], 
                                                     ignore_users=users_not_in_group)
             
+            if len(trained_recs_arg) == 1:
+                trained_recs_arg.append(previous_hyb[groupidx-1])
+                
             dict_args = {
                 "recs_on_urm_splitted": True, 
                 "dataset_version": self.dataset_version, 
@@ -384,8 +387,9 @@ class UserProfileRec(BaseRecommender):
                 n_cases=n_cases,
                 perc_random_starts=perc_random_starts,
                 block_size = block_size,
-                cust_output_folder = os.path.join(root, 
-                                                  os.path.join("per_group_hyperparams_search", "group" + str(groupidx)))
+                cust_output_folder = os.path.join(root,
+                                                  os.path.join( 
+                                                  os.path.join("per_group_hyperparams_search", "group" + str(groupidx)), "optimization"))
             )
             
             groupidx += 1

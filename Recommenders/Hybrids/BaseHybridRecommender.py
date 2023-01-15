@@ -81,12 +81,13 @@ class BaseHybridRecommender(BaseRecommender):
             
             
             
-    def load_model_by_version(self, version):
+    def load_model_by_version(self, version, isfolder=False):
         folder = "recommendations"
         folder = os.path.join(folder, self.dataset_version)
         folder = os.path.join(folder, self.RECOMMENDER_NAME)
         folder = os.path.join(folder, version)
-        folder = os.path.join(folder, "optimization")
+        if isfolder == False:
+            folder = os.path.join(folder, "optimization")
         self.load_model(folder, self.RECOMMENDER_NAME + "_best_model.zip")
         
         
