@@ -39,7 +39,7 @@ from Recommenders.MatrixFactorization.Cython.MatrixFactorization_Cython import M
     MatrixFactorization_FunkSVD_Cython, MatrixFactorization_AsySVD_Cython
 
 from Recommenders.Neural.MultVAERecommender import MultVAERecommender_OptimizerMask as MultVAERecommender
-from Recommenders.FactorizationMachines.LightFMRecommender import LightFMCFRecommender
+#from Recommenders.FactorizationMachines.LightFMRecommender import LightFMCFRecommender
 
 ######################################################################
 ##########                                                  ##########
@@ -58,7 +58,7 @@ from Recommenders.KNN.UserKNNCBFRecommender import UserKNNCBFRecommender
 ######################################################################
 from Recommenders.KNN.ItemKNN_CFCBF_Hybrid_Recommender import ItemKNN_CFCBF_Hybrid_Recommender
 from Recommenders.KNN.UserKNN_CFCBF_Hybrid_Recommender import UserKNN_CFCBF_Hybrid_Recommender
-from Recommenders.FactorizationMachines.LightFMRecommender import LightFMItemHybridRecommender, LightFMUserHybridRecommender
+#from Recommenders.FactorizationMachines.LightFMRecommender import LightFMItemHybridRecommender, LightFMUserHybridRecommender
 from Recommenders.FeatureWeighting.Cython.CFW_D_Similarity_Cython import CFW_D_Similarity_Cython
 from Recommenders.FeatureWeighting.Cython.CFW_DVV_Similarity_Cython import CFW_DVV_Similarity_Cython
 from Recommenders.FeatureWeighting.Cython.FBSM_Rating_Cython import FBSM_Rating_Cython
@@ -418,8 +418,8 @@ def run_KNNRecommender_on_similarity_type(similarity_type, hyperparameterSearch,
     original_hyperparameter_search_space = hyperparameter_search_space
 
     hyperparameters_range_dictionary = {
-        "topK": Integer(5, 1000),
-        "shrink": Integer(0, 1000),
+        "topK": Integer(600, 800),
+        "shrink": Integer(0, 1),
         "similarity": Categorical([similarity_type]),
         "normalize": Categorical([True, False]),
     }
@@ -687,7 +687,7 @@ def runHyperparameterSearch_Collaborative(recommender_class, URM_train, URM_trai
         if recommender_class in [ItemKNNCFRecommender, UserKNNCFRecommender]:
 
             if similarity_type_list is None:
-                similarity_type_list = ['cosine', 'jaccard', "asymmetric", "dice", "tversky"]
+                similarity_type_list = ['cosine', 'jaccard', "asymmetric", "dice", "tversky"]# "tanimoto", 'pearson', 'adjusted']
 
             recommender_input_args = SearchInputRecommenderArgs(
                 CONSTRUCTOR_POSITIONAL_ARGS = [URM_train],

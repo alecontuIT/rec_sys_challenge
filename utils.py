@@ -804,6 +804,32 @@ def submission(recommender, dataset_version, override = False):
         
     else:
         print("Error! It already exists the file ", rec_file_path)
+        
+        
+
+def hybrid_submission(recommender, dataset_version, override = False):
+    optimization_terminated(recommender, dataset_version, override = override)
+    recommendations_folder_root = "recommendations"
+    recommendations_folder_root = os.path.join(recommendations_folder_root, dataset_version)
+    recommendations_folder_root = os.path.join(recommendations_folder_root, recommender.RECOMMENDER_NAME)
+    recommendations_folder_version = os.path.join(recommendations_folder_root, recommender.RECOMMENDER_VERSION)
+        
+    rec_file_path = os.path.join(recommendations_folder_version, "recommendations.csv")
+    if (os.path.exists(rec_file_path) and override) or (not os.path.exists(rec_file_path)):
+        users = get_users_for_submission()
+        
+        tmp = recommender.recommend(user_id_array=users, cutoff=10)
+        well_formatted = []
+        for i in tmp:
+            well_formatted.append( " ".join([str(x) for x in i]))
+            
+        submission = pd.DataFrame()
+        submission["user_id"] = users
+        submission["item_list"] = well_formatted
+        submission.to_csv(rec_file_path, index=False)
+        
+    else:
+        print("Error! It already exists the file ", rec_file_path)
 
         
         
