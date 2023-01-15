@@ -241,12 +241,12 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 else:
                     string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
                 
-                trained_recs_idx -= -1
+                trained_recs_idx -= 1
                 
             else:
                 not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
-                not_trained_recs_classes_idx -= -1
+                not_trained_recs_classes_idx -= 1
             
             print("******* Optimize with model {} *******".format(string_name))
                 
