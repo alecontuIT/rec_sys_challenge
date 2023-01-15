@@ -176,7 +176,7 @@ class UserProfileRec(BaseRecommender):
                                             dataset_version=self.dataset_version, 
                                             optimization=with_validation)
 
-                cf_recs_dict[(recommender_class, version)] = recommender_object
+                cf_recs_dict[(recommender_class, recommender_version)] = recommender_object
                 
             for recommender_class in cb_rec_classes:
                 recommender_object = utils.load_best_model(URM, 
