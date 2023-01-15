@@ -25,13 +25,9 @@ class DiffStructHybridRecommender(BaseHybridRecommender):
         if len(alphas.values()) < 1 or self.num_rec != len(alphas.values()):
             print("The number of weights does not match with the number of recommenders to combine!")
         
-        idx = 0
         for alpha in alphas.values():
             self.normalization_const = self.normalization_const + alpha
             self.alphas.append(alpha)
-            self.RECOMMENDER_VERSION += "_alpha" + str(idx) + "-" + str(alpha)
-            idx += 1
-        self.RECOMMENDER_VERSION += "_norm-" + str(self.normalize)
 
         
 

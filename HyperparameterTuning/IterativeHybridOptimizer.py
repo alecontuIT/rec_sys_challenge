@@ -23,7 +23,7 @@ class IterativeHybridOptimizer():
         self.validation_results = []
         for rec in self.trained_recs:
             if issubclass(rec.__class__, BaseHybridRecommender):
-                val_res = rec.get_best_res_on_validation(self, rec.RECOMMENDER_VERSION, metric="MAP")
+                val_res = rec.get_best_res_on_validation(rec.RECOMMENDER_VERSION, metric="MAP")
             else:
                 val_res = utils.get_best_res_on_validation(rec_class, dataset_version=self.dataset_version)
             
@@ -89,7 +89,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
     
     
     
-    def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=False, allow_alphas_sum_to_one=True):
+    def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=True, allow_alphas_sum_to_one=False):
         self.alphas = []
         old_val_res = self.validation_results[0]
         self.recommender_hybrid = DiffStructHybridRecommender
@@ -97,7 +97,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
 
         hyperparameters_range_dictionary = self.get_hybrid_weights_range_dict(2, low=0., high=10., prior="uniform")
         if allow_normalization:
-            hyperparameters_range_dictionary["normalize"] = Categorical(["L1", None, "fro", "inf", "-inf"])
+            hyperparameters_range_dictionary["normalize"] = Categorical(["L1", None, "fro", "inf"])
         else:
             hyperparameters_range_dictionary["normalize"] = Categorical([None])
             
@@ -115,19 +115,30 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
         if self.is_fitted_mask[0]:
             trained_recs_arg.append(self.trained_recs[trained_recs_idx])
             trained_recs_idx += 1
+            if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
+                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
+            else:
+                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
         else:
             not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
             not_trained_recs_classes_idx += 1
+            string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
             
+        print("******* Best model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
         for idx in range(1, len(self.validation_results)):
             if self.is_fitted_mask[idx]:
                 trained_recs_arg.append(self.trained_recs[trained_recs_idx])
-                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
-                trained_recs_idx += 1
+                if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
+                    string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
+                else:
+                    string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
+                trained_recs_idx = 1
             else:
                 not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
                 not_trained_recs_classes_idx += 1
+                
+            print("******* Optimize with model {} *******".format(string_name))
                 
             dict_args = {
                 "recs_on_urm_splitted": True, 
@@ -185,7 +196,8 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
     
     def inverse_incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=False, allow_alphas_sum_to_one=True):
         self.alphas = []
-        old_val_res = self.validation_results[-1]
+        idx_res = -1
+        old_val_res = self.validation_results[idx_res]
         self.recommender_hybrid = DiffStructHybridRecommender
         optimized_hybrid = None
 
@@ -209,15 +221,28 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
         if self.is_fitted_mask[-1]:
             trained_recs_arg.append(self.trained_recs[trained_recs_idx])
             trained_recs_idx -= 1
+            if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
+                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
+            else:
+                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
         else:
             not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
             not_trained_recs_classes_idx -= 1
+            string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
             
+        print("******* Worst model in the list provided: {}, with MAP = {} *******".format(self.trained_recs[-1], old_val_res))
         for idx in range(len(self.validation_results) - 1, -1, -1):
             if self.is_fitted_mask[idx]:
                 trained_recs_arg.append(self.trained_recs[trained_recs_idx])
+                if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
+                    string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
+                else:
+                    string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
+                
                 string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
                 trained_recs_idx -= -1
+                print("******* Optimize with model {} *******".format(string_name))
+                
             else:
                 not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME

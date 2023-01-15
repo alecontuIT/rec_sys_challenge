@@ -765,7 +765,6 @@ def optimization_terminated(recommender, dataset_version, override = False):
             train_folder = os.path.join(recommendations_folder, "optimization")
             if not os.path.exists(train_folder):
                     os.makedirs(train_folder)
-            print(hyperparam_search_folder, train_folder)
             copy_all_files(hyperparam_search_folder, train_folder, remove_source_folder=False)
         
     else:
@@ -962,8 +961,8 @@ def load_item_scores(recommender_class,  dataset_version, fast = True, new_item_
     
     
 
-def fit_best_recommender(recommender_class, URM, dataset_version, optimization=False, **kwargs):
-    best_hyperparameters = get_best_model_hyperparameters(recommender_class, dataset_version)
+def fit_best_recommender(recommender_class, URM, dataset_version, optimization=True, **kwargs):
+    best_hyperparameters = get_best_model_hyperparameters(recommender_class, dataset_version, optimization)
     recommender = recommender_class(*get_kwargs_constructor(recommender_class, URM, dataset_version, optimization), **kwargs)
     recommender.fit(**best_hyperparameters)
     return recommender
@@ -988,6 +987,44 @@ def load_model_from_hyperparams_search_folder(URM, rec_class, dataset_version="i
     rec.load_model(folder, file_name = rec.RECOMMENDER_NAME + "_best_model.zip" )
     return rec
 
+    
+    
+def generate_best_models_after_commit(URM_all, URM_train, URM_val, recommender_class, dataset_version, metric="MAP", cutoff=10):
+    hyp = get_best_model_hyperparameters(recommender_class, dataset_version, optimization=False)
+
+    args = get_kwargs_constructor(recommender_class,
+                                  URM_train, 
+                                  dataset_version, 
+                                  optimization=True)
+    
+    from Evaluation.Evaluator import EvaluatorHoldout
+    evaluator_validation = EvaluatorHoldout(URM_val, cutoff_list=[10])
+    
+    from HyperparameterTuning.SearchAbstractClass import SearchInputRecommenderArgs
+    recommender_input_args = SearchInputRecommenderArgs(
+        CONSTRUCTOR_POSITIONAL_ARGS = args,    
+        CONSTRUCTOR_KEYWORD_ARGS = {},
+        FIT_POSITIONAL_ARGS = [],
+        FIT_KEYWORD_ARGS = {},
+        EARLYSTOPPING_KEYWORD_ARGS = {}, 
+    )
+    urm = recommender_input_args.CONSTRUCTOR_POSITIONAL_ARGS[0]
+    hyperparameterSearch = SearchSingleCase(recommender_class, evaluator_validation=evaluator_validation)
+    hyperparameterSearch.search(recommender_input_args,
+                                       fit_hyperparameters_values=hyp,
+                                       metric_to_optimize = metric,
+                                       cutoff_to_optimize = cutoff,
+                                       output_folder_path = get_hyperparams_search_output_folder(recommender_class, dataset_version=dataset_version),
+                                       output_file_name_root = recommender_class.RECOMMENDER_NAME,
+                                       resume_from_saved = False,
+                                       save_model = "best",
+                                       )
+    folder = get_folder_best_model(recommender_class, dataset_version)
+    folder = os.path.join(folder, "optimization")
+    shutil.rmtree(folder)
+    recommender = fit_best_recommender(recommender_class, URM_all, dataset_version, optimization=True)
+    submission(recommender, dataset_version, override=True)
+    
     
     
 ################### ALWAYS
@@ -1040,8 +1077,8 @@ def get_kwargs_constructor(rec_class, URM, dataset_version="interactions-all-one
     if rec_class is SLIM_BPRRec:
         memory_threshold = 0.9
         return [URM, memory_threshold]
-    if rec_class is LightFMRecommender:
-        return [URM, icm(), ucm()]
+#    if rec_class is LightFMRecommender:
+#        return [URM, icm(), ucm()]
     if rec_class is DiffStructHybridRecommender:
         return [URM, optimization, dataset_version]
     else:
@@ -1102,8 +1139,8 @@ def get_rec_class_by_name(rec_class_name):
         return ScaledPureSVDRec 
     elif SVDFeatureRec.RECOMMENDER_NAME == rec_class_name:
         return SVDFeatureRec
-    elif LightFMRecommender.RECOMMENDER_NAME == rec_class_name:
-        return LightFMRecommender
+#    elif LightFMRecommender.RECOMMENDER_NAME == rec_class_name:
+#        return LightFMRecommender
     elif DiffStructHybridRecommender.RECOMMENDER_NAME == rec_class_name:
         return DiffStructHybridRecommender
     

@@ -36,12 +36,17 @@ class BaseHybridRecommender(BaseRecommender):
             
         self.hybrids_versions = []
         for rec in trained_recs:
+            change_name = False
             self.trained_recs_list.append(rec)
             if issubclass(rec.__class__, BaseHybridRecommender):
                 self.hybrids_versions.append(rec.RECOMMENDER_VERSION)
+                change_name = True
             self.recs_classes_list.append(rec.__class__)
             self.recs_classes_names.append(rec.RECOMMENDER_NAME)
-            self.RECOMMENDER_VERSION += rec.RECOMMENDER_NAME[:(len(rec.RECOMMENDER_NAME)-len("Recommender"))]
+            if change_name:
+                self.RECOMMENDER_VERSION += rec.RECOMMENDER_VERSION
+            else:
+                self.RECOMMENDER_VERSION += rec.RECOMMENDER_NAME[:(len(rec.RECOMMENDER_NAME)-len("Recommender"))]
         
         
         
@@ -51,10 +56,12 @@ class BaseHybridRecommender(BaseRecommender):
         self.trained_recs_list = []
         hybrid_idx = 0
         for rec_class_name in self.recs_classes_names:
+            change_name = False
             rec_class = utils.get_rec_class_by_name(rec_class_name)
             self.recs_classes_list.append(rec_class)
             
             if issubclass(rec_class, BaseHybridRecommender):
+                change_name = True
                 rec = rec_class(self.URM_train, 
                                 recs_on_urm_splitted=self.recs_on_urm_splitted, 
                                 dataset_version = self.dataset_version)
@@ -67,7 +74,10 @@ class BaseHybridRecommender(BaseRecommender):
                                             dataset_version=self.dataset_version,
                                             optimization=self.recs_on_urm_splitted)
             self.trained_recs_list.append(rec)
-            self.RECOMMENDER_VERSION += rec.RECOMMENDER_NAME[:(len(rec.RECOMMENDER_NAME)-len("Recommender"))]
+            if change_name:
+                self.RECOMMENDER_VERSION += rec.RECOMMENDER_VERSION
+            else:
+                self.RECOMMENDER_VERSION += rec.RECOMMENDER_NAME[:(len(rec.RECOMMENDER_NAME)-len("Recommender"))]
             
             
             
@@ -76,10 +86,7 @@ class BaseHybridRecommender(BaseRecommender):
         folder = os.path.join(folder, self.dataset_version)
         folder = os.path.join(folder, self.RECOMMENDER_NAME)
         folder = os.path.join(folder, version)
-        if self.recs_on_urm_splitted:
-            folder = os.path.join(folder, "optimization")
-        else:
-            folder = os.path.join(folder, "best")
+        folder = os.path.join(folder, "optimization")
         self.load_model(folder, self.RECOMMENDER_NAME + "_best_model.zip")
         
         
