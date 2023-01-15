@@ -125,7 +125,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
             not_trained_recs_classes_idx += 1
 
             
-        print("******* Best model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
+        print("\n\n******* Best model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
         for idx in range(1, len(self.validation_results)):
             if self.is_fitted_mask[idx]:
                 trained_recs_arg.append(self.trained_recs[trained_recs_idx])
@@ -139,7 +139,8 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
                 not_trained_recs_classes_idx += 1
                 
-            print("******* Optimize with model {} *******".format(string_name))
+            print("\n***********************************************************")
+            print("\n******* Optimize with model {} *******\n".format(string_name))
                 
             dict_args = {
                 "recs_on_urm_splitted": True, 
@@ -171,7 +172,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
             val_res = tmp.get_best_res_on_validation_during_search()
             
             if val_res > old_val_res:
-                print("******* Validation Metric improved! Validation result of Model {} equal to {}. Model kept. *******".format(string_name, val_res))
+                print("\n******* Validation Metric improved! Validation result of Model {} equal to {}. Model kept. *******\n".format(string_name, val_res))
                 old_val_res = val_res
                 
                 optimized_hybrid = utils.load_model_from_hyperparams_search_folder(self.URM_train,
@@ -188,7 +189,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                     hyperparameters_range_dictionary["normalize"] = Categorical([optimized_hybrid.normalize])
                 
             else:
-                print("******* Validation Metric not improved! Validation result of Model {} equal to {}. Model discarded. *******".format(string_name, val_res))
+                print("\n******* Validation Metric not improved! Validation result of Model {} equal to {}. Model discarded. *******\n".format(string_name, val_res))
                 not_trained_recs_classes_arg = []
             
         return optimized_hybrid
@@ -232,8 +233,8 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
             not_trained_recs_classes_idx -= 1
 
             
-        print("******* Worst model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
-        for idx in range(len(self.validation_results) - 1, -1, -1):
+        print("\n\n******* Worst model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
+        for idx in range(0, len(self.validation_results)-1)[::-1]:
             if self.is_fitted_mask[idx]:
                 trained_recs_arg.append(self.trained_recs[trained_recs_idx])
                 if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
@@ -248,7 +249,8 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
                 not_trained_recs_classes_idx -= 1
             
-            print("******* Optimize with model {} *******".format(string_name))
+            print("\n***********************************************************")
+            print("\n******* Optimize with model {} *******\n".format(string_name))
                 
             dict_args = {
                 "recs_on_urm_splitted": True, 
@@ -280,7 +282,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
             val_res = tmp.get_best_res_on_validation_during_search()
             
             if val_res > old_val_res:
-                print("******* Validation Metric improved! Validation result of Model {} equal to {}. Model kept. *******".format(string_name, val_res))
+                print("\n******* Validation Metric improved! Validation result of Model {} equal to {}. Model kept. *******\n".format(string_name, val_res))
                 old_val_res = val_res
                 
                 optimized_hybrid = utils.load_model_from_hyperparams_search_folder(self.URM_train,
@@ -297,7 +299,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                     hyperparameters_range_dictionary["normalize"] = Categorical([optimized_hybrid.normalize])
                 
             else:
-                print("******* Validation Metric not improved! Validation result of Model {} equal to {}. Model discarded. *******".format(string_name, val_res))
+                print("\n******* Validation Metric not improved! Validation result of Model {} equal to {}. Model discarded. *******\n".format(string_name, val_res))
                 not_trained_recs_classes_arg = []
             
         return optimized_hybrid
