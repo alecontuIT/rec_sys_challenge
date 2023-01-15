@@ -114,15 +114,16 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
         
         if self.is_fitted_mask[0]:
             trained_recs_arg.append(self.trained_recs[trained_recs_idx])
-            trained_recs_idx += 1
             if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
                 string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
             else:
                 string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
+            trained_recs_idx += 1
         else:
             not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
-            not_trained_recs_classes_idx += 1
             string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
+            not_trained_recs_classes_idx += 1
+
             
         print("******* Best model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
         for idx in range(1, len(self.validation_results)):
@@ -132,7 +133,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                     string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
                 else:
                     string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
-                trained_recs_idx = 1
+                trained_recs_idx += 1
             else:
                 not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
@@ -220,17 +221,18 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
         
         if self.is_fitted_mask[-1]:
             trained_recs_arg.append(self.trained_recs[trained_recs_idx])
-            trained_recs_idx -= 1
             if issubclass(self.trained_recs[trained_recs_idx].__class__, BaseHybridRecommender):
                 string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_VERSION
             else:
                 string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
+            trained_recs_idx -= 1
         else:
             not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
-            not_trained_recs_classes_idx -= 1
             string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
+            not_trained_recs_classes_idx -= 1
+
             
-        print("******* Worst model in the list provided: {}, with MAP = {} *******".format(self.trained_recs[-1], old_val_res))
+        print("******* Worst model in the list provided: {}, with MAP = {} *******".format(string_name, old_val_res))
         for idx in range(len(self.validation_results) - 1, -1, -1):
             if self.is_fitted_mask[idx]:
                 trained_recs_arg.append(self.trained_recs[trained_recs_idx])
@@ -239,14 +241,14 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 else:
                     string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
                 
-                string_name = self.trained_recs[trained_recs_idx].RECOMMENDER_NAME
                 trained_recs_idx -= -1
-                print("******* Optimize with model {} *******".format(string_name))
                 
             else:
                 not_trained_recs_classes_arg.append(self.rec_classes_list[not_trained_recs_classes_idx])
                 string_name = self.rec_classes_list[not_trained_recs_classes_idx].RECOMMENDER_NAME
                 not_trained_recs_classes_idx -= -1
+            
+            print("******* Optimize with model {} *******".format(string_name))
                 
             dict_args = {
                 "recs_on_urm_splitted": True, 
