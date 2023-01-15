@@ -175,10 +175,7 @@ class UserProfileRec(BaseRecommender):
                                             recommender_class, 
                                             dataset_version=self.dataset_version, 
                                             optimization=with_validation)
-                try:
-                    version = recommender_object.RECOMMENDER_VERSION
-                except Exception as e:
-                    version = ""
+
                 cf_recs_dict[(recommender_class, version)] = recommender_object
                 
             for recommender_class in cb_rec_classes:
@@ -247,7 +244,7 @@ class UserProfileRec(BaseRecommender):
         self.best_cf_fitted_rec_dict, self.best_cb_fitted_rec_dict = self.fit_all_recs(
             self.best_cf_recs_class_no_duplicates,
             self.best_cf_recs_version_no_duplicates,
-            best_cb_recs_class_no_duplicates, 
+            self.best_cb_recs_class_no_duplicates, 
             self.URM_train, 
             False,
             self.ICM_train)
