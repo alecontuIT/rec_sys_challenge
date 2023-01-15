@@ -89,7 +89,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
     
     
     
-    def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=True, allow_alphas_sum_to_one=False):
+    def incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=True, allow_alphas_sum_to_one=False, custom_path=None):
         self.alphas = []
         old_val_res = self.validation_results[0]
         self.recommender_hybrid = DiffStructHybridRecommender
@@ -165,7 +165,8 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 dataset_version=self.dataset_version,
                 n_cases=n_cases,
                 perc_random_starts=perc_random_starts,
-                block_size = block_size
+                block_size = block_size,
+                cust_output_folder = custom_path
             )
             
             tmp = self.recommender_hybrid(self.URM_train, True, self.dataset_version)
@@ -196,7 +197,7 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
     
     
     
-    def inverse_incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=False, allow_alphas_sum_to_one=True):
+    def inverse_incremental_bayesian_search(self, n_cases, perc_random_starts, block_size=None, cutoff=10, allow_normalization=False, allow_alphas_sum_to_one=True, custom_path=None):
         self.alphas = []
         idx_res = -1
         old_val_res = self.validation_results[idx_res]
@@ -275,7 +276,8 @@ class DiffStructHybridOptimizer(IterativeHybridOptimizer):
                 dataset_version=self.dataset_version,
                 n_cases=n_cases,
                 perc_random_starts=perc_random_starts,
-                block_size = block_size
+                block_size = block_size,
+                cust_output_folder = custom_path
             )
             
             tmp = self.recommender_hybrid(self.URM_train, True, self.dataset_version)

@@ -668,10 +668,10 @@ def global_effects(URM_biased, shrink_user=5000, shrink_item=3000):
     
 
 
-def bayesian_search(recommender_class, recommender_input_args, hyperparameters_range_dictionary, evaluator_validation, dataset_version="interactions-all-ones", n_cases = 60, perc_random_starts = 0.3, metric_to_optimize = "MAP", cutoff_to_optimize = 10, cust_output_folder_path=None, block_size=None, resume_from_saved=False, ICM=None, ICM_name=None):
+def bayesian_search(recommender_class, recommender_input_args, hyperparameters_range_dictionary, evaluator_validation, dataset_version="interactions-all-ones", n_cases = 60, perc_random_starts = 0.3, metric_to_optimize = "MAP", cutoff_to_optimize = 10, cust_output_folder=None, block_size=None, resume_from_saved=False, ICM=None, ICM_name=None):
 
     n_random_starts = int(n_cases * perc_random_starts)
-    output_folder_path = get_hyperparams_search_output_folder(recommender_class, dataset_version=dataset_version, custom_folder_name=cust_output_folder_path)
+    output_folder_path = get_hyperparams_search_output_folder(recommender_class, dataset_version=dataset_version, custom_folder_name=cust_output_folder)
     
     if recommender_class is TopPopRec:
         recommender_input_args_local = recommender_input_args
